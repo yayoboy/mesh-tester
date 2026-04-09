@@ -1,0 +1,47 @@
+mqtt:
+  broker: "localhost"
+  port: 1883
+  topic_root: "msh/EU_868/2"
+  channel: "LongFast"
+
+board_a:
+  gateway_id: "!aabbccdd"  # CHANGE THIS to Board A's real node ID
+  serial_port: "/dev/cu.usbserial-XXXX"  # Optional: for serial config
+
+virtual_nodes:
+  - id: "!11111111"
+    longname: "VNode-Alpha"
+    shortname: "VA"
+    lat: 45.4642
+    lon: 9.1900
+    alt: 120
+  - id: "!22222222"
+    longname: "VNode-Beta"
+    shortname: "VB"
+    lat: 45.4700
+    lon: 9.1950
+    alt: 130
+  - id: "!33333333"
+    longname: "VNode-Gamma"
+    shortname: "VG"
+    lat: 45.4580
+    lon: 9.1850
+    alt: 115
+
+scenarios:
+  stress_test:
+    type: "burst"
+    messages_per_node: 100
+    interval_ms: 500
+  topology_sim:
+    type: "continuous"
+    send_position: true
+    send_text: true
+    position_interval_s: 30
+    text_interval_s: 10
+  mixed_traffic:
+    type: "continuous"
+    send_position: true
+    send_text: true
+    position_interval_s: 15
+    text_interval_s: 5
