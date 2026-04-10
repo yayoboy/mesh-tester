@@ -20,7 +20,7 @@ via subagent-driven development.
 | 4 | Traffic Generator | YAY-203 | done | `257f253` |
 | 5 | TUI App Shell | YAY-205 | done | `f873672` |
 | 6 | TUI Node Table + Message Log widgets | YAY-205 | done | `0e5e37b` |
-| 7 | TUI wire-up + `main.py` CLI | YAY-204 | done | pending |
+| 7 | TUI wire-up + `main.py` CLI | YAY-204 | done | `0ac9623` |
 | H | Hardware bring-up (Board A + Mosquitto) | YAY-206 | todo | — |
 
 **Tests passing:** 35 / 35 (config 4 + virtual_node 7 + mqtt_injector 4 + traffic_generator 5 + tui_app 5 + tui_widgets 8 + main 2)
