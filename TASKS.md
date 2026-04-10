@@ -1,6 +1,6 @@
 # Mesh Tester - Task List
 
-> **Last updated:** 2026-04-10 (Task 5 done)
+> **Last updated:** 2026-04-10 (Task 6 done)
 > **Plan:** `docs/superpowers/plans/2026-04-10-mesh-tester.md`
 > **Linear project:** [Mesh Tester](https://linear.app/yayoboy/project/mesh-tester-add1c613c89b)
 
@@ -18,12 +18,12 @@ via subagent-driven development.
 | 2 | VirtualNode dataclass | YAY-201 | done | `8d99438` |
 | 3 | MQTT Injector | YAY-202 | done | `6b9311d` |
 | 4 | Traffic Generator | YAY-203 | done | `257f253` |
-| 5 | TUI App Shell | YAY-205 | done | pending |
-| 6 | TUI Node Table + Message Log widgets | YAY-205 | todo | — |
+| 5 | TUI App Shell | YAY-205 | done | `f873672` |
+| 6 | TUI Node Table + Message Log widgets | YAY-205 | done | pending |
 | 7 | TUI wire-up + `main.py` CLI | YAY-204 | todo | — |
 | H | Hardware bring-up (Board A + Mosquitto) | YAY-206 | todo | — |
 
-**Tests passing:** 25 / 25 (config 4 + virtual_node 7 + mqtt_injector 4 + traffic_generator 5 + tui_app 5)
+**Tests passing:** 33 / 33 (config 4 + virtual_node 7 + mqtt_injector 4 + traffic_generator 5 + tui_app 5 + tui_widgets 8)
 
 ---
 
@@ -97,14 +97,14 @@ Class `TrafficGenerator(injector, nodes, on_send=None)` that orchestrates virtua
 - [x] Smoke tests using Textual `App.run_test()` — 5 tests: mount, panels, bindings, start/stop actions
 - [x] Commit: `feat: TUI app shell with key bindings and status bar`
 
-## Task 6 — TUI widgets: Node Table + Message Log ⏳
+## Task 6 — TUI widgets: Node Table + Message Log ✅
 
 **Linear:** YAY-205 · **Files:** `src/tui/widgets/node_table.py`, `src/tui/widgets/message_log.py`
 
-- [ ] `NodeTable(DataTable)` — columns ID/Name/Lat/Lon/Alt/Sent, `add_node`, `update_sent`
-- [ ] `MessageLog(RichLog)` — `log_text(node, text)`, `log_position(node)`, colorized
-- [ ] Unit tests for row add/update + log line formatting
-- [ ] Commit: `feat: TUI node table and message log widgets`
+- [x] `NodeTable(DataTable)` — columns ID/Name/Lat/Lon/Alt/Sent, `add_node(node)`, `update_sent(node_id, count)`
+- [x] `MessageLog(RichLog)` — `log_text(node, text)`, `log_position(node)`, Rich colorized output + `entries` list
+- [x] 8 unit tests: column count, row add×2, cell update, text/position entry type and coords
+- [x] Commit: `feat: TUI node table and message log widgets`
 
 ## Task 7 — TUI wire-up + `main.py` CLI ⏳
 
@@ -138,5 +138,5 @@ Class `TrafficGenerator(injector, nodes, on_send=None)` that orchestrates virtua
 
 1. Activate venv: `source .venv/bin/activate`
 2. Read this file + `docs/superpowers/plans/2026-04-10-mesh-tester.md`
-3. Current in-progress task: **Task 6 — TUI Node Table + Message Log widgets**
+3. Current in-progress task: **Task 7 — TUI wire-up + `main.py` CLI**
 4. Continue subagent-driven dispatch (implementer → spec review → code review → commit)
