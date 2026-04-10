@@ -32,14 +32,12 @@ class MessageLogApp(App):
 
 # ── NodeTable tests ────────────────────────────────────────────────────────────
 
-@pytest.mark.asyncio
 async def test_node_table_has_six_columns():
     async with NodeTableApp().run_test() as pilot:
         table = pilot.app.query_one(NodeTable)
         assert len(table.ordered_columns) == 6
 
 
-@pytest.mark.asyncio
 async def test_add_node_increments_row_count():
     async with NodeTableApp().run_test() as pilot:
         table = pilot.app.query_one(NodeTable)
@@ -48,7 +46,6 @@ async def test_add_node_increments_row_count():
         assert table.row_count == 1
 
 
-@pytest.mark.asyncio
 async def test_add_two_nodes_shows_two_rows():
     async with NodeTableApp().run_test() as pilot:
         table = pilot.app.query_one(NodeTable)
@@ -57,7 +54,6 @@ async def test_add_two_nodes_shows_two_rows():
         assert table.row_count == 2
 
 
-@pytest.mark.asyncio
 async def test_update_sent_changes_cell_value():
     async with NodeTableApp().run_test() as pilot:
         table = pilot.app.query_one(NodeTable)
@@ -70,7 +66,6 @@ async def test_update_sent_changes_cell_value():
 
 # ── MessageLog tests ───────────────────────────────────────────────────────────
 
-@pytest.mark.asyncio
 async def test_log_text_appends_entry():
     async with MessageLogApp().run_test() as pilot:
         log = pilot.app.query_one(MessageLog)
@@ -79,7 +74,6 @@ async def test_log_text_appends_entry():
         assert len(log.entries) == 1
 
 
-@pytest.mark.asyncio
 async def test_log_position_appends_entry():
     async with MessageLogApp().run_test() as pilot:
         log = pilot.app.query_one(MessageLog)
@@ -87,7 +81,6 @@ async def test_log_position_appends_entry():
         assert len(log.entries) == 1
 
 
-@pytest.mark.asyncio
 async def test_log_text_entry_has_correct_type_and_node():
     async with MessageLogApp().run_test() as pilot:
         log = pilot.app.query_one(MessageLog)
@@ -99,7 +92,6 @@ async def test_log_text_entry_has_correct_type_and_node():
         assert entry["text"] == "test message"
 
 
-@pytest.mark.asyncio
 async def test_log_position_entry_has_correct_coords():
     async with MessageLogApp().run_test() as pilot:
         log = pilot.app.query_one(MessageLog)

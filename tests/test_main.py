@@ -32,7 +32,6 @@ def test_dry_run_prints_topic_and_nodes(capsys):
 
 # ── app wires nodes into NodeTable on mount ────────────────────────────────────
 
-@pytest.mark.asyncio
 async def test_app_with_nodes_populates_node_table():
     nodes = [
         VirtualNode(id="!11111111", longname="Alpha", shortname="A",

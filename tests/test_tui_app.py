@@ -16,13 +16,11 @@ def test_key_bindings_registered():
 
 # ── async smoke tests via Textual run_test() ───────────────────────────────────
 
-@pytest.mark.asyncio
 async def test_app_mounts_status_bar():
     async with MeshTesterApp().run_test() as pilot:
         assert pilot.app.query_one(StatusBar) is not None
 
 
-@pytest.mark.asyncio
 async def test_app_has_required_panels():
     async with MeshTesterApp().run_test() as pilot:
         app = pilot.app
@@ -31,7 +29,6 @@ async def test_app_has_required_panels():
         assert app.query_one("#log-panel") is not None
 
 
-@pytest.mark.asyncio
 async def test_start_action_sets_running():
     async with MeshTesterApp().run_test() as pilot:
         status_bar = pilot.app.query_one(StatusBar)
@@ -40,7 +37,6 @@ async def test_start_action_sets_running():
         assert status_bar.running
 
 
-@pytest.mark.asyncio
 async def test_stop_action_clears_running():
     async with MeshTesterApp().run_test() as pilot:
         status_bar = pilot.app.query_one(StatusBar)
