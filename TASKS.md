@@ -1,6 +1,6 @@
 # Mesh Tester - Task List
 
-> **Last updated:** 2026-04-10
+> **Last updated:** 2026-04-10 (Task 4 done)
 > **Plan:** `docs/superpowers/plans/2026-04-10-mesh-tester.md`
 > **Linear project:** [Mesh Tester](https://linear.app/yayoboy/project/mesh-tester-add1c613c89b)
 
@@ -17,13 +17,13 @@ via subagent-driven development.
 | 1 | Scaffold + Config loader | YAY-200 | done | `9efed0a` |
 | 2 | VirtualNode dataclass | YAY-201 | done | `8d99438` |
 | 3 | MQTT Injector | YAY-202 | done | `6b9311d` |
-| 4 | Traffic Generator | YAY-203 | todo | — |
+| 4 | Traffic Generator | YAY-203 | done | pending |
 | 5 | TUI App Shell | YAY-205 | todo | — |
 | 6 | TUI Node Table + Message Log widgets | YAY-205 | todo | — |
 | 7 | TUI wire-up + `main.py` CLI | YAY-204 | todo | — |
 | H | Hardware bring-up (Board A + Mosquitto) | YAY-206 | todo | — |
 
-**Tests passing:** 15 / 15 (config 4 + virtual_node 7 + mqtt_injector 4)
+**Tests passing:** 20 / 20 (config 4 + virtual_node 7 + mqtt_injector 4 + traffic_generator 5)
 
 ---
 
@@ -64,27 +64,27 @@ via subagent-driven development.
 
 ---
 
-## Task 4 — Traffic Generator ⏳
+## Task 4 — Traffic Generator ✅
 
 **Linear:** YAY-203 · **Files:** `src/traffic_generator.py`, `tests/test_traffic_generator.py`
 
 Class `TrafficGenerator(injector, nodes, on_send=None)` that orchestrates virtual-node traffic.
 
-- [ ] Write failing tests (5):
-  - [ ] `test_announce_nodes_publishes_one_position_per_node`
-  - [ ] `test_send_text_round_publishes_one_text_per_node`
-  - [ ] `test_send_position_round_publishes_one_position_per_node`
-  - [ ] `test_total_sent_counter_increments`
-  - [ ] `test_on_send_callback_receives_node_and_payload`
-- [ ] Implement `TrafficGenerator` with:
-  - [ ] `announce_nodes()` — position burst for all nodes
-  - [ ] `send_text_round(msg_prefix="test")` — one text per node, incrementing counter
-  - [ ] `send_position_round()`
-  - [ ] `add_node(node)` / `remove_node(node_id)`
-  - [ ] `total_sent` (int), `running` (bool), `nodes` (list) properties
-  - [ ] `on_send(node, payload, topic)` callback fires per publish
-- [ ] Run full suite (expect 20 passing)
-- [ ] Commit: `feat: traffic generator with configurable text and position rounds`
+- [x] Write failing tests (5):
+  - [x] `test_announce_nodes_publishes_one_position_per_node`
+  - [x] `test_send_text_round_publishes_one_text_per_node`
+  - [x] `test_send_position_round_publishes_one_position_per_node`
+  - [x] `test_total_sent_counter_increments`
+  - [x] `test_on_send_callback_receives_node_and_payload`
+- [x] Implement `TrafficGenerator` with:
+  - [x] `announce_nodes()` — position burst for all nodes
+  - [x] `send_text_round(msg_prefix="test")` — one text per node, incrementing counter
+  - [x] `send_position_round()`
+  - [x] `add_node(node)` / `remove_node(node_id)`
+  - [x] `total_sent` (int), `running` (bool), `nodes` (list) properties
+  - [x] `on_send(node, payload, topic)` callback fires per publish
+- [x] Run full suite (20 / 20 passing)
+- [x] Commit: `feat: traffic generator with configurable text and position rounds`
 
 ## Task 5 — TUI App shell ⏳
 
@@ -137,5 +137,5 @@ Class `TrafficGenerator(injector, nodes, on_send=None)` that orchestrates virtua
 
 1. Activate venv: `source .venv/bin/activate`
 2. Read this file + `docs/superpowers/plans/2026-04-10-mesh-tester.md`
-3. Current in-progress task: **Task 4 — Traffic Generator**
+3. Current in-progress task: **Task 5 — TUI App Shell**
 4. Continue subagent-driven dispatch (implementer → spec review → code review → commit)
