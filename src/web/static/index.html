@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en" x-data="meshApp()" x-init="init()" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mesh Tester</title>
+
+  <!-- Tailwind CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            surface: { DEFAULT: '#0d1117', 1: '#161b22', 2: '#21262d', 3: '#30363d', 4: '#484f58' },
+            ink:     { DEFAULT: '#c9d1d9', muted: '#8b949e', faint: '#484f58' },
+          },
+          fontFamily: { mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'] },
+        },
+      },
+    }
+  </script>
+
+  <!-- Alpine.js -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+  <style>
+    [x-cloak] { display: none !important; }
+    body { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    #log-feed { max-height: 220px; overflow-y: auto; scroll-behavior: smooth; }
+    #log-feed::-webkit-scrollbar { width: 4px; }
+    #log-feed::-webkit-scrollbar-thumb { background:#30363d; border-radius:2px; }
+    .node-table tbody tr { transition: background 0.15s; }
+    .node-table tbody tr:hover { background:#21262d; }
+    @keyframes rowflash { 0%,100%{background:transparent} 50%{background:#21262d} }
+    .row-flash { animation: rowflash 0.4s ease; }
+  </style>
+</head>
+
+<body class="bg-surface text-ink min-h-screen flex flex-col" x-cloak>
+
+  <!-- ───────────────────────── HEADER ──────────────────────────────────── -->
+  <header class="bg-surface-1 border-b border-surface-3 px-5 py-2.5 flex items-center gap-5 flex-wrap select-none">
+
+    <!-- Logo -->
+    <div class="flex items-center gap-2">
+      <!-- Heroicon: signal -->
+      <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+          d="M9.172 16.172a4 4 0 015.656 0M6.343 13.343a8 8 0 0111.314 0M3.515 10.515C7.05 6.979 12.95 6.979 16.485 10.515
+             M1 7.757C5.929 2.828 13.071 2.828 18 7.757"/>
+      </svg>
+      <span class="text-ink font-semibold text-sm tracking-wide">Mesh Tester</span>
+    </div>
+
+    <!-- MQTT status -->
+    <div class="flex items-center gap-1.5 text-xs">
+      <span :class="status.mqtt_connected ? 'bg-green-500' : 'bg-red-500'"
+            class="w-2 h-2 rounded-full inline-block"></span>
+      <span class="text-ink-muted">MQTT</span>
+    </div>
+
+    <!-- Run status -->
+    <div class="flex items-center gap-1.5 text-xs">
+      <template x-if="status.running && !status.paused">
+        <span class="bg-green-500 w-2 h-2 rounded-full"></span>
+      </template>
+      <template x-if="status.paused">
+        <span class="bg-yellow-500 w-2 h-2 rounded-full"></span>
+      </template>
+      <template x-if="!status.running">
+        <span class="bg-surface-4 w-2 h-2 rounded-full"></span>
+      </template>
+      <span class="text-ink-muted" x-text="status.running && !status.paused ? 'running' : status.paused ? 'paused' : 'idle'"></span>
+    </div>
+
+    <!-- Scenario -->
+    <div class="text-xs text-ink-muted">
+      Scenario: <span class="text-blue-400 font-medium" x-text="status.scenario || '—'"></span>
+    </div>
+
+    <!-- Zone -->
+    <div class="text-xs text-ink-muted">
+      Zone: <span class="text-ink" x-text="status.zone || '—'"></span>
+    </div>
+
+    <!-- Right side stats -->
+    <div class="ml-auto flex items-center gap-5 text-xs text-ink-muted">
+      <span>Boards: <span class="text-ink font-medium" x-text="nodes.length"></span></span>
+      <span>Sent: <span class="text-ink font-medium" x-text="status.total_sent || 0"></span></span>
+      <span>
+        <!-- Heroicon: clock -->
+        <svg class="inline w-3.5 h-3.5 mr-0.5 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <span x-text="uptimeStr"></span>
+      </span>
+    </div>
+  </header>
+
+  <!-- ───────────────────────── MAIN GRID ───────────────────────────────── -->
+  <div class="flex-1 flex overflow-hidden">
+
+    <!-- ── Left: node table + log ──────────────────────────────────────── -->
+    <div class="flex-1 flex flex-col overflow-hidden min-w-0">
+
+      <!-- Node / Board table -->
+      <div class="flex-1 overflow-auto">
+        <table class="node-table w-full text-xs border-collapse">
+          <thead class="sticky top-0 bg-surface-1 text-ink-muted uppercase tracking-wider text-[10px]">
+            <tr>
+              <th class="px-3 py-2 text-left font-medium">
+                <div class="flex items-center gap-1">
+                  <!-- Heroicon: cpu-chip -->
+                  <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M9 3H7a2 2 0 00-2 2v2M9 3h6M9 3V1m6 2h2a2 2 0 012 2v2m0 0V3m0 4v10
+                         m0 0v2a2 2 0 01-2 2h-2m0 0H9m6 0v2M9 21H7a2 2 0 01-2-2v-2m0 0V9
+                         M5 9H3m2 0v6m14-6h2m-2 0v6"/>
+                  </svg>
+                  Board ID
+                </div>
+              </th>
+              <th class="px-3 py-2 text-left font-medium">Name</th>
+              <th class="px-3 py-2 text-left font-medium hidden lg:table-cell">MQTT Topic</th>
+              <th class="px-3 py-2 text-right font-medium">Lat</th>
+              <th class="px-3 py-2 text-right font-medium">Lon</th>
+              <th class="px-3 py-2 text-right font-medium">Alt</th>
+              <th class="px-3 py-2 text-right font-medium">Sent</th>
+              <th class="px-3 py-2 text-center font-medium">State</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-surface-2">
+            <template x-if="nodes.length === 0">
+              <tr>
+                <td colspan="8" class="px-3 py-10 text-center text-ink-faint text-sm">
+                  Connecting…
+                </td>
+              </tr>
+            </template>
+            <template x-for="node in nodes" :key="node.id">
+              <tr :id="'row-' + node.id.slice(1)"
+                  class="cursor-default">
+                <!-- Board ID -->
+                <td class="px-3 py-2 font-mono text-blue-400" x-text="node.id"></td>
+                <!-- Name -->
+                <td class="px-3 py-2 text-ink font-medium" x-text="node.longname"></td>
+                <!-- Topic (hidden on small screens) -->
+                <td class="px-3 py-2 text-ink-faint text-[10px] hidden lg:table-cell truncate max-w-xs"
+                    x-text="node.topic || '—'"></td>
+                <!-- Lat -->
+                <td class="px-3 py-2 text-right tabular-nums text-ink-muted" x-text="node.lat?.toFixed(4)"></td>
+                <!-- Lon -->
+                <td class="px-3 py-2 text-right tabular-nums text-ink-muted" x-text="node.lon?.toFixed(4)"></td>
+                <!-- Alt -->
+                <td class="px-3 py-2 text-right tabular-nums text-ink-muted" x-text="node.alt"></td>
+                <!-- Sent -->
+                <td class="px-3 py-2 text-right tabular-nums font-semibold text-ink" x-text="node.sent"></td>
+                <!-- State badge -->
+                <td class="px-3 py-2 text-center">
+                  <template x-if="node.is_rogue">
+                    <span class="inline-flex items-center gap-1 bg-red-900/40 text-red-400 text-[10px] px-1.5 py-0.5 rounded">
+                      <!-- Heroicon: exclamation-triangle -->
+                      <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                      </svg>
+                      rogue
+                    </span>
+                  </template>
+                  <template x-if="!node.is_rogue">
+                    <span class="inline-flex items-center gap-1 text-ink-faint text-[10px]">
+                      <!-- Heroicon: check-circle -->
+                      <svg class="w-3 h-3 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                      </svg>
+                      ok
+                    </span>
+                  </template>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Live log -->
+      <div class="border-t border-surface-3 bg-surface-1 shrink-0">
+        <div class="flex items-center justify-between px-4 py-1.5 border-b border-surface-2">
+          <div class="flex items-center gap-1.5 text-[10px] text-ink-muted uppercase tracking-wider">
+            <!-- Heroicon: queue-list -->
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2
+                   M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+            </svg>
+            Live log
+          </div>
+          <button @click="log = []"
+            class="text-[10px] text-ink-faint hover:text-ink transition-colors flex items-center gap-1">
+            <!-- Heroicon: trash -->
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6
+                   m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+            </svg>
+            clear
+          </button>
+        </div>
+        <div id="log-feed" class="px-4 py-2 space-y-0.5">
+          <template x-for="(entry, i) in log" :key="i">
+            <div class="flex items-start gap-2 text-[11px] leading-relaxed">
+              <span class="text-ink-faint tabular-nums shrink-0" x-text="entry.time"></span>
+              <!-- Text message -->
+              <template x-if="entry.level === 'text'">
+                <span>
+                  <!-- Heroicon: chat-bubble-left -->
+                  <svg class="inline w-3 h-3 text-green-500 mr-0.5 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949
+                         L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
+                  </svg>
+                  <span class="text-green-400 font-medium" x-text="entry.node"></span>
+                  <span class="text-ink-faint mx-1">›</span>
+                  <span class="text-ink" x-text="entry.text"></span>
+                </span>
+              </template>
+              <!-- Position message -->
+              <template x-if="entry.level === 'position'">
+                <span>
+                  <!-- Heroicon: map-pin -->
+                  <svg class="inline w-3 h-3 text-blue-400 mr-0.5 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z"/>
+                  </svg>
+                  <span class="text-blue-400 font-medium" x-text="entry.node"></span>
+                  <span class="text-ink-faint mx-1">at</span>
+                  <span class="text-ink-muted" x-text="`${entry.lat}, ${entry.lon}`"></span>
+                </span>
+              </template>
+            </div>
+          </template>
+          <div x-show="log.length === 0" class="text-ink-faint text-xs py-2">Waiting for traffic…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Right sidebar: controls ─────────────────────────────────────── -->
+    <aside class="w-56 border-l border-surface-3 bg-surface-1 flex flex-col gap-5 p-4 overflow-y-auto shrink-0">
+
+      <!-- Transport -->
+      <section>
+        <p class="text-ink-faint text-[10px] uppercase tracking-wider mb-2.5 flex items-center gap-1">
+          <!-- Heroicon: play-circle -->
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M15.91 11.672a.375.375 0 010 .656l-5.603 3.113a.375.375 0 01-.557-.328V8.887c0-.286.307-.466.557-.327l5.603 3.112z"/>
+          </svg>
+          Control
+        </p>
+        <div class="flex flex-col gap-2">
+          <button @click="apiPost('/api/start')"
+            class="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded bg-green-700 hover:bg-green-600 text-white text-xs font-medium transition-colors">
+            <!-- Heroicon: play -->
+            <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M8 5.14v14l11-7-11-7z"/>
+            </svg>
+            Start
+          </button>
+          <button @click="apiPost('/api/pause')"
+            class="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded bg-yellow-700 hover:bg-yellow-600 text-white text-xs font-medium transition-colors">
+            <!-- Heroicon: pause -->
+            <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+            </svg>
+            Pause
+          </button>
+          <button @click="apiPost('/api/stop')"
+            class="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded bg-red-800 hover:bg-red-700 text-white text-xs font-medium transition-colors">
+            <!-- Heroicon: stop -->
+            <svg class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M6 6h12v12H6z"/>
+            </svg>
+            Stop
+          </button>
+        </div>
+      </section>
+
+      <!-- Scenario -->
+      <section>
+        <p class="text-ink-faint text-[10px] uppercase tracking-wider mb-2.5 flex items-center gap-1">
+          <!-- Heroicon: squares-2x2 -->
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6z
+                 M14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6z
+                 M4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2z
+                 M14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/>
+          </svg>
+          Scenario
+        </p>
+        <div class="flex flex-col gap-1">
+          <template x-for="s in scenarios" :key="s.key">
+            <button
+              @click="setScenario(s.key)"
+              :class="status.scenario === s.key
+                ? 'bg-blue-700 text-white'
+                : 'bg-surface-2 text-ink-muted hover:bg-surface-3 hover:text-ink'"
+              class="w-full flex items-center gap-2 px-3 py-2 rounded text-xs text-left transition-colors">
+              <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" :d="s.icon"/>
+              </svg>
+              <span x-text="s.label"></span>
+            </button>
+          </template>
+        </div>
+      </section>
+
+      <!-- Zone -->
+      <section>
+        <p class="text-ink-faint text-[10px] uppercase tracking-wider mb-2.5 flex items-center gap-1">
+          <!-- Heroicon: map -->
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3
+                 m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/>
+          </svg>
+          Zone
+        </p>
+        <select x-model="selectedZone" @change="setZone(selectedZone)"
+          class="w-full bg-surface-2 border border-surface-3 text-ink text-xs rounded px-2 py-1.5
+                 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer">
+          <option value="">Select zone…</option>
+          <template x-for="z in zones" :key="z.name">
+            <option :value="z.name" x-text="`${z.name}  (r=${z.radius}km)`"></option>
+          </template>
+        </select>
+        <p class="text-ink-faint text-[10px] mt-1">Stop traffic before changing zone.</p>
+      </section>
+
+      <!-- Info -->
+      <section class="mt-auto pt-3 border-t border-surface-2">
+        <div class="text-[10px] text-ink-faint space-y-1">
+          <div class="flex justify-between">
+            <span>Boards</span>
+            <span class="text-ink" x-text="nodes.length"></span>
+          </div>
+          <div class="flex justify-between">
+            <span>Zone</span>
+            <span class="text-ink" x-text="status.zone || '—'"></span>
+          </div>
+          <div class="flex justify-between">
+            <span>Total sent</span>
+            <span class="text-ink" x-text="status.total_sent || 0"></span>
+          </div>
+          <div class="flex justify-between pt-1 border-t border-surface-3">
+            <span>API docs</span>
+            <a href="/docs" target="_blank" class="text-blue-400 hover:underline">
+              <!-- Heroicon: arrow-top-right-on-square -->
+              <svg class="inline w-3 h-3 -mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4
+                     M14 4h6m0 0v6m0-6L10 14"/>
+              </svg>
+              /docs
+            </a>
+          </div>
+        </div>
+      </section>
+    </aside>
+  </div>
+
+  <!-- ───────────────────────── Alpine app ──────────────────────────────── -->
+  <script>
+    function meshApp() {
+      return {
+        // ── state ───────────────────────────────────────────────────────────
+        status: {
+          running: false, paused: false, mqtt_connected: false,
+          scenario: 'idle', zone: '', total_sent: 0, uptime: 0, node_count: 0,
+        },
+        nodes: [],
+        log: [],
+        zones: [],
+        selectedZone: '',
+        uptimeStr: '00:00:00',
+        _baseTs: 0,
+        _serverUptime: 0,
+        _uptimeTick: null,
+        _ws: null,
+
+        scenarios: [
+          { key: 'idle',  label: 'Idle',  icon: 'M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z' },
+          { key: 'chat',  label: 'Chat',  icon: 'M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z' },
+          { key: 'walk',  label: 'Walk',  icon: 'M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z M15 11a3 3 0 11-6 0 3 3 0 016 0z' },
+          { key: 'burst', label: 'Burst', icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
+        ],
+
+        // ── init ─────────────────────────────────────────────────────────────
+        init() {
+          this.connectWS();
+          this.loadZones();
+          this._startUptimeTick();
+        },
+
+        // ── WebSocket ─────────────────────────────────────────────────────────
+        connectWS() {
+          const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+          this._ws = new WebSocket(`${proto}://${location.host}/ws`);
+
+          this._ws.onmessage = (e) => {
+            const msg = JSON.parse(e.data);
+            if      (msg.type === 'status')         this.applyStatus(msg);
+            else if (msg.type === 'nodes_snapshot') this.nodes = msg.nodes;
+            else if (msg.type === 'node_update')    this.applyNodeUpdate(msg);
+            else if (msg.type === 'log')            this.appendLog(msg);
+          };
+
+          this._ws.onclose = () => setTimeout(() => this.connectWS(), 2000);
+        },
+
+        applyStatus(s) {
+          this.status = { ...this.status, ...s };
+          this._serverUptime = s.uptime || 0;
+          this._baseTs = Date.now();
+        },
+
+        applyNodeUpdate(data) {
+          const node = this.nodes.find(n => n.id === data.node_id);
+          if (node) {
+            node.sent = data.sent;
+            if (data.lat !== undefined) { node.lat = data.lat; node.lon = data.lon; }
+            // flash row
+            const row = document.getElementById('row-' + data.node_id.slice(1));
+            if (row) {
+              row.classList.remove('row-flash');
+              void row.offsetWidth;
+              row.classList.add('row-flash');
+            }
+          }
+        },
+
+        appendLog(msg) {
+          const t = new Date(msg.ts * 1000).toTimeString().slice(0, 8);
+          this.log.push({ ...msg, time: t });
+          if (this.log.length > 200) this.log.shift();
+          this.$nextTick(() => {
+            const feed = document.getElementById('log-feed');
+            if (feed) feed.scrollTop = feed.scrollHeight;
+          });
+        },
+
+        // ── API calls ─────────────────────────────────────────────────────────
+        async apiPost(url) {
+          try {
+            const r = await fetch(url, { method: 'POST' });
+            return await r.json();
+          } catch(e) {
+            console.error('apiPost', url, e);
+          }
+        },
+
+        setScenario(name) { this.apiPost(`/api/scenario/${name}`); },
+        setZone(name)     { if (name) this.apiPost(`/api/zone/${name}`); },
+
+        async loadZones() {
+          try {
+            this.zones = await fetch('/api/zones').then(r => r.json());
+          } catch(e) { console.error(e); }
+        },
+
+        // ── Uptime ticker ─────────────────────────────────────────────────────
+        _startUptimeTick() {
+          this._uptimeTick = setInterval(() => {
+            if (!this.status.running) return;
+            const elapsed = this._serverUptime + Math.floor((Date.now() - this._baseTs) / 1000);
+            const h = String(Math.floor(elapsed / 3600)).padStart(2, '0');
+            const m = String(Math.floor((elapsed % 3600) / 60)).padStart(2, '0');
+            const s = String(elapsed % 60).padStart(2, '0');
+            this.uptimeStr = `${h}:${m}:${s}`;
+          }, 1000);
+        },
+      }
+    }
+  </script>
+</body>
+</html>

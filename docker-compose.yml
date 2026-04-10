@@ -1,0 +1,58 @@
+services:
+
+  # ── MQTT broker ─────────────────────────────────────────────────────────────
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mesh-mosquitto
+    ports:
+      - "1883:1883"       # MQTT
+      - "9001:9001"       # WebSocket (optional, for external clients)
+    volumes:
+      - ./config/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto-data:/mosquitto/data
+      - mosquitto-logs:/mosquitto/log
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mosquitto_pub", "-h", "localhost", "-t", "healthcheck", "-m", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ── Mesh Tester web app ──────────────────────────────────────────────────────
+  mesh-tester:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mesh-tester
+    ports:
+      - "8080:8080"
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+    environment:
+      # MQTT
+      MQTT_BROKER: mosquitto
+      MQTT_PORT: "1883"
+      # Nodes
+      MESH_ZONE: ${MESH_ZONE:-Milano}
+      MESH_COUNT: ${MESH_COUNT:-5}
+      MESH_PREFIX: ${MESH_PREFIX:-TST}
+      # Web server
+      WEB_HOST: "0.0.0.0"
+      WEB_PORT: "8080"
+    volumes:
+      - ./config:/app/config:ro     # optional JSON config overrides
+      - mesh-logs:/app/logs         # JSONL recorder output
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/status')"]
+      interval: 15s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+volumes:
+  mosquitto-data:
+  mosquitto-logs:
+  mesh-logs:

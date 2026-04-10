@@ -10,3 +10,10 @@ docs/obsidian
 # Generated
 screenshot.png
 screenshot.svg
+
+# Docker / local overrides
+.env
+logs/
+
+# Config overrides (keep example, ignore personal)
+config/*.json
