@@ -7,12 +7,42 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
+import random as _random
 import sys
 
-from src.config import ConfigError, load_config
+from src.config import AppConfig, ConfigError, load_config
 from src.mqtt_injector import MqttInjector
 from src.tui.app import MeshTesterApp
 from src.virtual_node import VirtualNode
+
+_NODE_NAMES = [
+    "Alpha", "Beta", "Gamma", "Delta", "Epsilon",
+    "Zeta", "Eta", "Theta", "Iota", "Kappa",
+]
+
+
+def _make_nodes(cfg: AppConfig) -> list[VirtualNode]:
+    """Generate virtual nodes from zone + pool config.
+
+    Uses a fixed RNG seed so the same config always produces the same nodes.
+    Will be replaced by NodeFactory in Task B.
+    """
+    rng = _random.Random(42)
+    nodes: list[VirtualNode] = []
+    for i in range(cfg.nodes.count):
+        base_name = _NODE_NAMES[i % len(_NODE_NAMES)]
+        raw = f"{cfg.nodes.prefix}-{i}".encode()
+        node_id = "!" + hashlib.sha1(raw).hexdigest()[:8]
+        nodes.append(VirtualNode(
+            id=node_id,
+            longname=f"{cfg.nodes.prefix}_{base_name}",
+            shortname=f"{cfg.nodes.prefix[:2].upper()}{i + 1}",
+            lat=cfg.zone.center_lat + rng.uniform(-0.045, 0.045),
+            lon=cfg.zone.center_lon + rng.uniform(-0.045, 0.045),
+            alt=rng.randint(cfg.nodes.alt_min, cfg.nodes.alt_max),
+        ))
+    return nodes
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -22,15 +52,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--config",
-        default="config/test_config.yaml",
+        default=None,
         metavar="PATH",
-        help="YAML config file (default: config/test_config.yaml)",
+        help="JSON config file (default: built-in defaults)",
     )
     p.add_argument(
         "--scenario",
         default=None,
         metavar="NAME",
-        help="Scenario to activate on start (default: first in config)",
+        help="Scenario to activate on start",
     )
     p.add_argument(
         "--dry-run",
@@ -40,26 +70,24 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return p
 
 
-def dry_run(cfg: dict) -> None:
-    """Print a human-readable summary of the resolved config to stdout."""
-    mqtt = cfg["mqtt"]
-    board = cfg["board_a"]
-    nodes = cfg["virtual_nodes"]
-    topic = f"{mqtt['topic_root']}/json/{mqtt['channel']}/{board['gateway_id']}"
+def dry_run(cfg: AppConfig, nodes: list[VirtualNode]) -> None:
+    """Print a human-readable summary of the resolved config and node list."""
+    gw = cfg.mqtt.gateway_ids[0]
+    topic = f"{cfg.mqtt.topic_root}/json/{cfg.mqtt.channel}/{gw}"
 
     print("=== Mesh Tester — Dry Run ===")
-    print(f"\n  MQTT broker : {mqtt['broker']}:{mqtt['port']}")
-    print(f"  Topic       : {topic}")
-    print(f"  Gateway ID  : {board['gateway_id']}")
+    print(f"\n  MQTT broker  : {cfg.mqtt.broker}:{cfg.mqtt.port}")
+    print(f"  Topic        : {topic}")
+    print(f"  Gateway IDs  : {', '.join(cfg.mqtt.gateway_ids)}")
+    print(f"  Zone         : {cfg.zone.name}"
+          f" ({cfg.zone.center_lat:.4f}, {cfg.zone.center_lon:.4f}"
+          f" r={cfg.zone.radius_km} km)")
     print(f"\n  Virtual nodes ({len(nodes)}):")
     for n in nodes:
         print(
-            f"    {n['id']:13s}  {n['longname']:22s}"
-            f"  lat={n['lat']:.4f}  lon={n['lon']:.4f}  alt={n['alt']} m"
+            f"    {n.id:13s}  {n.longname:28s}"
+            f"  lat={n.lat:.4f}  lon={n.lon:.4f}  alt={n.alt} m"
         )
-    scenarios = cfg.get("scenarios", {})
-    if scenarios:
-        print(f"\n  Scenarios: {', '.join(scenarios.keys())}")
     print()
 
 
@@ -73,26 +101,24 @@ def main(argv=None) -> None:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
 
+    nodes = _make_nodes(cfg)
+
     if args.dry_run:
-        dry_run(cfg)
+        dry_run(cfg, nodes)
         return
 
-    nodes = [VirtualNode.from_config(nc) for nc in cfg["virtual_nodes"]]
-    mqtt_cfg = cfg["mqtt"]
     injector = MqttInjector(
-        broker=mqtt_cfg["broker"],
-        port=mqtt_cfg["port"],
-        topic_root=mqtt_cfg["topic_root"],
-        channel=mqtt_cfg["channel"],
-        gateway_id=cfg["board_a"]["gateway_id"],
+        broker=cfg.mqtt.broker,
+        port=cfg.mqtt.port,
+        topic_root=cfg.mqtt.topic_root,
+        channel=cfg.mqtt.channel,
+        gateway_id=cfg.mqtt.gateway_ids[0],
     )
-    scenarios = cfg.get("scenarios", {})
-    initial_scenario = args.scenario or (next(iter(scenarios), None) or "LongFast")
+    initial_scenario = args.scenario or cfg.zone.name
 
     app = MeshTesterApp(
         injector=injector,
         nodes=nodes,
-        scenarios=scenarios,
         initial_scenario=initial_scenario,
     )
     try:

@@ -1,77 +1,70 @@
 import pytest
-from src.config import load_config, ConfigError
+from src.config import (
+    AppConfig, MqttConfig, ZoneConfig, NodePoolConfig,
+    ConfigError, load_config, save_config,
+)
 
-VALID_YAML = """
-mqtt:
-  broker: "localhost"
-  port: 1883
-  topic_root: "msh/EU_868/2"
-  channel: "LongFast"
 
-board_a:
-  gateway_id: "!aabbccdd"
+def test_default_appconfig_has_sensible_values():
+    cfg = AppConfig()
+    assert cfg.mqtt.broker == "localhost"
+    assert cfg.mqtt.port == 1883
+    assert cfg.zone.name == "Milano"
+    assert cfg.nodes.count == 5
+    assert cfg.nodes.prefix == "TST"
+    assert cfg.log_to_file is False
 
-virtual_nodes:
-  - id: "!11111111"
-    longname: "VNode-Alpha"
-    shortname: "VA"
-    lat: 45.4642
-    lon: 9.1900
-    alt: 120
 
-scenarios:
-  stress_test:
-    type: "burst"
-    messages_per_node: 10
-    interval_ms: 500
+def test_mqtt_config_gateway_ids_default():
+    cfg = MqttConfig()
+    assert isinstance(cfg.gateway_ids, list)
+    assert len(cfg.gateway_ids) == 1
+    assert cfg.gateway_ids[0] == "!00000000"
 
-output:
-  console: true
-"""
 
-MISSING_NODES_YAML = """
-mqtt:
-  broker: "localhost"
-board_a:
-  gateway_id: "!aabbccdd"
-"""
+def test_zone_config_defaults():
+    zone = ZoneConfig()
+    assert zone.name == "Milano"
+    assert zone.center_lat == pytest.approx(45.4654, abs=1e-4)
+    assert zone.center_lon == pytest.approx(9.1859, abs=1e-4)
+    assert zone.radius_km == pytest.approx(5.0)
 
-def test_load_valid_config(tmp_path):
-    cfg_file = tmp_path / "config.yaml"
-    cfg_file.write_text(VALID_YAML)
-    config = load_config(str(cfg_file))
-    assert config["mqtt"]["broker"] == "localhost"
-    assert config["mqtt"]["port"] == 1883
-    assert len(config["virtual_nodes"]) == 1
-    assert config["virtual_nodes"][0]["id"] == "!11111111"
-    assert config["board_a"]["gateway_id"] == "!aabbccdd"
 
-def test_load_config_missing_virtual_nodes(tmp_path):
-    cfg_file = tmp_path / "config.yaml"
-    cfg_file.write_text(MISSING_NODES_YAML)
-    with pytest.raises(ConfigError, match="virtual_nodes"):
-        load_config(str(cfg_file))
+def test_node_pool_config_defaults():
+    pool = NodePoolConfig()
+    assert pool.count == 5
+    assert pool.alt_min < pool.alt_max
+    assert pool.prefix == "TST"
+
+
+def test_load_config_no_path_returns_defaults():
+    cfg = load_config()
+    assert isinstance(cfg, AppConfig)
+    assert cfg.mqtt.broker == "localhost"
+    assert cfg.zone.name == "Milano"
+
 
 def test_load_config_file_not_found():
     with pytest.raises(FileNotFoundError):
-        load_config("/nonexistent/path.yaml")
+        load_config("/nonexistent/path/config.json")
 
-def test_load_config_defaults(tmp_path):
-    minimal = """
-mqtt:
-  broker: "localhost"
-board_a:
-  gateway_id: "!aabbccdd"
-virtual_nodes:
-  - id: "!11111111"
-    longname: "Test"
-    shortname: "T"
-    lat: 0.0
-    lon: 0.0
-    alt: 0
-"""
-    cfg_file = tmp_path / "config.yaml"
-    cfg_file.write_text(minimal)
-    config = load_config(str(cfg_file))
-    assert config["mqtt"]["port"] == 1883
-    assert config["mqtt"]["channel"] == "LongFast"
+
+def test_save_and_load_config_roundtrip(tmp_path):
+    cfg = AppConfig()
+    cfg.mqtt.broker = "192.168.1.100"
+    cfg.mqtt.port = 1884
+    cfg.mqtt.gateway_ids = ["!deadbeef", "!cafebabe"]
+    cfg.nodes.count = 10
+    cfg.nodes.prefix = "MIL"
+    cfg.zone.name = "Roma"
+    cfg.zone.center_lat = 41.9028
+    path = str(tmp_path / "config.json")
+    save_config(cfg, path)
+    loaded = load_config(path)
+    assert loaded.mqtt.broker == "192.168.1.100"
+    assert loaded.mqtt.port == 1884
+    assert loaded.mqtt.gateway_ids == ["!deadbeef", "!cafebabe"]
+    assert loaded.nodes.count == 10
+    assert loaded.nodes.prefix == "MIL"
+    assert loaded.zone.name == "Roma"
+    assert loaded.zone.center_lat == pytest.approx(41.9028)

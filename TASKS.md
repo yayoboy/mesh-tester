@@ -1,6 +1,6 @@
 # Mesh Tester - Task List
 
-> **Last updated:** 2026-04-10 (Task 7 done — software complete)
+> **Last updated:** 2026-04-10 (Redesign v2 in progress)
 > **Plan:** `docs/superpowers/plans/2026-04-10-mesh-tester.md`
 > **Linear project:** [Mesh Tester](https://linear.app/yayoboy/project/mesh-tester-add1c613c89b)
 
@@ -10,7 +10,7 @@ via subagent-driven development.
 
 ---
 
-## Progress summary
+## Progress summary — v1 (complete)
 
 | # | Task | Linear | Status | Commit |
 |---|------|--------|--------|--------|
@@ -23,7 +23,20 @@ via subagent-driven development.
 | 7 | TUI wire-up + `main.py` CLI | YAY-204 | done | `0ac9623` |
 | H | Hardware bring-up (Board A + Mosquitto) | YAY-206 | todo | — |
 
-**Tests passing:** 35 / 35 (config 4 + virtual_node 7 + mqtt_injector 4 + traffic_generator 5 + tui_app 5 + tui_widgets 8 + main 2)
+## Progress summary — v2 redesign
+
+| # | Task | Description | Status | Commit |
+|---|------|-------------|--------|--------|
+| A | Config refactor | `config.py` → dataclasses, no YAML, JSON save/load | done | pending |
+| B | Zone + Factory | `zone.py` presets Italia + `node_factory.py` scatter | todo | — |
+| C | VirtualNode v2 | walk, telemetry, rogue mode, prefix | todo | — |
+| D | Scenarios v2 | idle / chat / walk / burst / replay in TrafficGenerator | todo | — |
+| E | Recorder | `recorder.py` — registra sessione reale, replay | todo | — |
+| F | TUI v2 | ZonePicker, ScenarioPanel, NodeDetail popup, mouse | todo | — |
+| G | main.py v2 | multi-gateway, new config API, zone/factory wiring | todo | — |
+
+**Tests passing (v1):** 35 / 35
+**Tests passing (v2):** 38 / 38 (Task A done)
 
 ---
 
@@ -137,9 +150,83 @@ Class `TrafficGenerator(injector, nodes, on_send=None)` that orchestrates virtua
 
 ---
 
-## Resuming tomorrow
+---
 
-1. Activate venv: `source .venv/bin/activate`
-2. Read this file + `docs/superpowers/plans/2026-04-10-mesh-tester.md`
-3. **All software tasks complete** — next step: Hardware bring-up (YAY-206)
-4. Continue subagent-driven dispatch (implementer → spec review → code review → commit)
+## Task A — Config refactor ✅
+
+**Files:** `src/config.py` (rewrite), `tests/test_config.py` (rewrite), `main.py` (update)
+
+- [x] Replace YAML-based `load_config` with dataclasses: `MqttConfig`, `ZoneConfig`, `NodePoolConfig`, `AppConfig`
+- [x] `load_config(path=None)` → returns `AppConfig` from JSON or pure defaults (no file required)
+- [x] `save_config(cfg, path)` → serializes `AppConfig` to JSON
+- [x] `ConfigError` kept for JSON parse errors
+- [x] 7 new tests replacing old 4 (defaults, roundtrip, file-not-found, etc.)
+- [x] Update `main.py`: new config API + `_make_nodes()` temporary generation (seed=42)
+- [x] Update `test_main.py`: `dry_run()` now takes `AppConfig` + nodes list
+- [x] Commit: `refactor: config.py → dataclasses, JSON save/load, no YAML required`
+
+## Task B — Zone + Node Factory ⏳
+
+**Files:** `src/zone.py` (new), `src/node_factory.py` (new), `tests/test_zone.py`, `tests/test_node_factory.py`
+
+- [ ] `ZoneConfig` presets Italia: Milano, Roma, Napoli, Torino, Bologna, Custom
+- [ ] `scatter_nodes(zone, pool)` → distribuzione gaussiana centrata (realistica)
+- [ ] `NodeFactory(zone, pool)` → `generate()` lista di `VirtualNode` con prefix, ID deterministici
+- [ ] Replace temporary node gen in `main.py` with `NodeFactory`
+- [ ] Tests: preset coords, scatter within radius, prefix in longname/shortname
+
+## Task C — VirtualNode v2 ⏳
+
+**Files:** `src/virtual_node.py` (extend), `tests/test_virtual_node.py` (extend)
+
+- [ ] `step(speed_kmh, heading_deg)` → aggiorna `lat/lon` incrementalmente
+- [ ] `telemetry_payload(battery_level, voltage, snr, rssi)` → payload telemetria
+- [ ] `prefix` field opzionale; `longname = f"{prefix}_{base}"` se impostato
+- [ ] `is_rogue: bool = False` → se True, `text_payload` produce payload malformato
+- [ ] Tests: step sposta coordinate, telemetry ha campi corretti, rogue produce payload invalido
+
+## Task D — Scenari v2 ⏳
+
+**Files:** `src/traffic_generator.py` (extend), `tests/test_traffic_generator.py` (extend)
+
+- [ ] `idle_round(beacon_interval_s)` — solo position ogni N sec
+- [ ] `chat_round(vocabulary, rate)` — testo casuale tra nodi
+- [ ] `walk_round(speed_kmh)` — chiama `node.step()` + invia position
+- [ ] `burst_round(duration_s)` — max frequency per N sec
+- [ ] `delay_jitter_ms` param su tutti i round (ritardo realistico LoRa)
+- [ ] Tests per ogni nuovo scenario
+
+## Task E — Recorder ⏳
+
+**Files:** `src/recorder.py` (new), `tests/test_recorder.py`
+
+- [ ] `Recorder(path)` — registra eventi `{ts, node_id, type, payload}` in JSONL
+- [ ] `record(node, payload)` — appende riga
+- [ ] `replay(path, injector, speed_multiplier=1.0)` — riproduce sessione registrata
+- [ ] Tests: record scrive file, replay chiama publish nell'ordine corretto
+
+## Task F — TUI v2 ⏳
+
+**Files:** `src/tui/widgets/zone_picker.py`, `src/tui/widgets/scenario_panel.py`, `src/tui/widgets/node_detail.py`, update `src/tui/app.py`
+
+- [ ] `ZonePicker` — dropdown preset Italia + input lat/lon/radius + "Scatter nodes"
+- [ ] `ScenarioPanel` — lista scenari cliccabili + parametri (rate, jitter, speed)
+- [ ] `NodeDetail` — popup su click riga NodeTable: campi, storico, telemetria, Pin/Mute/Rogue
+- [ ] Scroll mouse in MessageLog
+- [ ] MQTT dot in StatusBar cliccabile (connect/disconnect)
+- [ ] Tests: smoke mount + interazioni base
+
+## Task G — main.py v2 ⏳
+
+**Files:** `main.py` (update), `src/mqtt_injector.py` (extend multi-gateway)
+
+- [ ] `MqttInjector` supporta `gateway_ids: list[str]` → pubblica su topic per ogni gateway
+- [ ] `main.py`: usa `NodeFactory`, nuovi scenari, `--zone`, `--count`, `--prefix` argomenti
+- [ ] `--save-config PATH` → salva config corrente in JSON
+- [ ] Tests: multi-gateway pubblica N volte, argomenti CLI
+
+## Resuming
+
+1. `python -m pytest -v` — verifica tutto verde
+2. Leggi questa sezione + progress summary
+3. Task corrente: **Task A — Config refactor**

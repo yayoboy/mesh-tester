@@ -1,45 +1,89 @@
+from __future__ import annotations
+
+import dataclasses
+import json
+import typing
+from dataclasses import dataclass, field
 from pathlib import Path
-import yaml
+
 
 class ConfigError(Exception):
     pass
 
-DEFAULTS = {
-    "mqtt": {"port": 1883, "topic_root": "msh/EU_868/2", "channel": "LongFast"},
-    "output": {"console": True},
-}
 
-def _deep_merge(base: dict, override: dict) -> dict:
-    result = base.copy()
-    for key, value in override.items():
-        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
-            result[key] = _deep_merge(result[key], value)
-        else:
-            result[key] = value
-    return result
+# ── dataclasses ────────────────────────────────────────────────────────────────
 
-def _validate(config: dict) -> None:
-    required_sections = ["mqtt", "board_a", "virtual_nodes"]
-    for section in required_sections:
-        if section not in config:
-            raise ConfigError(f"Missing required section: {section}")
-    if not isinstance(config["virtual_nodes"], list) or len(config["virtual_nodes"]) == 0:
-        raise ConfigError("virtual_nodes must be a non-empty list")
-    if "broker" not in config["mqtt"]:
-        raise ConfigError("mqtt.broker is required")
-    if "gateway_id" not in config["board_a"]:
-        raise ConfigError("board_a.gateway_id is required")
-    for i, node in enumerate(config["virtual_nodes"]):
-        for field in ("id", "longname", "shortname", "lat", "lon", "alt"):
-            if field not in node:
-                raise ConfigError(f"virtual_nodes[{i}] missing required field: {field}")
+@dataclass
+class MqttConfig:
+    broker: str = "localhost"
+    port: int = 1883
+    topic_root: str = "msh/EU_868/2"
+    channel: str = "LongFast"
+    gateway_ids: list[str] = field(default_factory=lambda: ["!00000000"])
 
-def load_config(path: str) -> dict:
-    config_path = Path(path)
-    if not config_path.exists():
+
+@dataclass
+class ZoneConfig:
+    name: str = "Milano"
+    center_lat: float = 45.4654
+    center_lon: float = 9.1859
+    radius_km: float = 5.0
+
+
+@dataclass
+class NodePoolConfig:
+    count: int = 5
+    prefix: str = "TST"
+    alt_min: int = 50
+    alt_max: int = 200
+
+
+@dataclass
+class AppConfig:
+    mqtt: MqttConfig = field(default_factory=MqttConfig)
+    zone: ZoneConfig = field(default_factory=ZoneConfig)
+    nodes: NodePoolConfig = field(default_factory=NodePoolConfig)
+    log_to_file: bool = False
+    log_path: str = "logs/session.jsonl"
+
+
+# ── serialization helpers ──────────────────────────────────────────────────────
+
+def _from_dict(cls: type, data: dict):
+    """Recursively construct a dataclass from a plain dict."""
+    hints = typing.get_type_hints(cls)
+    kwargs: dict = {}
+    for f in dataclasses.fields(cls):
+        if f.name not in data:
+            continue
+        val = data[f.name]
+        field_type = hints.get(f.name)
+        if field_type and dataclasses.is_dataclass(field_type) and isinstance(val, dict):
+            val = _from_dict(field_type, val)
+        kwargs[f.name] = val
+    return cls(**kwargs)
+
+
+# ── public API ─────────────────────────────────────────────────────────────────
+
+def load_config(path: str | None = None) -> AppConfig:
+    """Return an AppConfig from a JSON file, or pure defaults if *path* is None."""
+    if path is None:
+        return AppConfig()
+    p = Path(path)
+    if not p.exists():
         raise FileNotFoundError(f"Config file not found: {path}")
-    with open(config_path) as f:
-        raw = yaml.safe_load(f)
-    config = _deep_merge(DEFAULTS, raw)
-    _validate(config)
-    return config
+    try:
+        with open(p) as f:
+            data = json.load(f)
+    except json.JSONDecodeError as exc:
+        raise ConfigError(f"Invalid JSON in config file: {exc}") from exc
+    return _from_dict(AppConfig, data)
+
+
+def save_config(cfg: AppConfig, path: str) -> None:
+    """Serialize *cfg* to JSON at *path* (creates parent dirs if needed)."""
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p, "w") as f:
+        json.dump(dataclasses.asdict(cfg), f, indent=2)

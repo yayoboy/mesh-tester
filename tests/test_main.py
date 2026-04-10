@@ -1,33 +1,24 @@
 import pytest
 from src.virtual_node import VirtualNode
+from src.config import AppConfig, MqttConfig
 from src.tui.app import MeshTesterApp
 from src.tui.widgets.node_table import NodeTable
 
 
-# ── main.py dry-run ────────────────────────────────────────────────────────────
+# ── dry_run output ─────────────────────────────────────────────────────────────
 
-def test_dry_run_prints_topic_and_nodes(capsys):
-    from main import dry_run
-    cfg = {
-        "mqtt": {
-            "broker": "localhost",
-            "port": 1883,
-            "topic_root": "msh/EU_868/2",
-            "channel": "LongFast",
-        },
-        "board_a": {"gateway_id": "!aabbccdd"},
-        "virtual_nodes": [
-            {
-                "id": "!11111111", "longname": "Alpha", "shortname": "A",
-                "lat": 45.0, "lon": 9.0, "alt": 100,
-            },
-        ],
-    }
-    dry_run(cfg)
+def test_dry_run_prints_broker_and_topic(capsys):
+    from main import dry_run, _make_nodes
+    cfg = AppConfig()
+    cfg.mqtt.broker = "testbroker"
+    cfg.mqtt.gateway_ids = ["!aabbccdd"]
+    nodes = _make_nodes(cfg)
+    dry_run(cfg, nodes)
     out = capsys.readouterr().out
+    assert "testbroker" in out
     assert "!aabbccdd" in out
-    assert "!11111111" in out
     assert "msh/EU_868/2/json/LongFast/!aabbccdd" in out
+    assert f"nodes ({cfg.nodes.count})" in out
 
 
 # ── app wires nodes into NodeTable on mount ────────────────────────────────────
