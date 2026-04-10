@@ -6,16 +6,9 @@ WORKDIR /app
 # Install build deps
 RUN pip install --upgrade pip
 
-COPY requirements.txt pyproject.toml ./
-# Install runtime deps only (no dev extras)
-RUN pip install --no-cache-dir \
-    fastapi \
-    "uvicorn[standard]" \
-    paho-mqtt \
-    rich \
-    textual \
-    PyYAML \
-    meshtastic
+COPY requirements.txt ./
+# Install runtime deps from requirements.txt (dev deps like pytest stay out)
+RUN pip install --no-cache-dir -r requirements.txt
 
 
 # ── Runtime stage ─────────────────────────────────────────────────────────────
