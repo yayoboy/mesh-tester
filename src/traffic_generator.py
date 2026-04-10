@@ -1,5 +1,6 @@
 from __future__ import annotations
 import random
+import time
 from typing import Callable, Optional
 from src.virtual_node import VirtualNode
 from src.mqtt_injector import MqttInjector
@@ -32,7 +33,9 @@ class TrafficGenerator:
     def remove_node(self, node_id: str) -> None:
         self._nodes = [n for n in self._nodes if n.id != node_id]
 
-    def _publish(self, node: VirtualNode, payload: dict) -> None:
+    def _publish(self, node: VirtualNode, payload: dict, delay_jitter_ms: int = 0) -> None:
+        if delay_jitter_ms > 0:
+            time.sleep(random.uniform(0, delay_jitter_ms) / 1000.0)
         self._injector.publish(node, payload)
         self._total_sent += 1
         if self._on_send is not None:
@@ -45,7 +48,7 @@ class TrafficGenerator:
     def send_text_round(self, msg_prefix: str = "test", delay_jitter_ms: int = 0) -> None:
         for node in self._nodes:
             text = f"{msg_prefix} #{self._total_sent + 1}"
-            self._publish(node, node.text_payload(text))
+            self._publish(node, node.text_payload(text), delay_jitter_ms=delay_jitter_ms)
 
     def send_position_round(self) -> None:
         for node in self._nodes:

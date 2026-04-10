@@ -3,6 +3,11 @@ __pycache__/
 .venv/
 reports/
 .DS_Store
+
+# Python build artifacts
+*.egg-info/
+dist/
+build/
 .omc/
 .claude/
 docs/obsidian

@@ -38,7 +38,7 @@ class MqttInjector:
         self._topics = [
             f"{topic_root}/json/{channel}/{gid}" for gid in self._gateway_ids
         ]
-        self._client = mqtt.Client()
+        self._client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         self._connected = False
 
     # ── backward-compat property ───────────────────────────────────────────────

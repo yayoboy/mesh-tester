@@ -2,13 +2,9 @@ from __future__ import annotations
 
 import math
 import random
-from typing import TYPE_CHECKING
 
 from src.config import NodePoolConfig, ZoneConfig
 from src.virtual_node import VirtualNode
-
-if TYPE_CHECKING:
-    pass
 
 # ── Italian city presets ───────────────────────────────────────────────────────
 
