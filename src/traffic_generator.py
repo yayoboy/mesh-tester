@@ -1,4 +1,5 @@
 from __future__ import annotations
+import random
 from typing import Callable, Optional
 from src.virtual_node import VirtualNode
 from src.mqtt_injector import MqttInjector
@@ -41,7 +42,7 @@ class TrafficGenerator:
         for node in self._nodes:
             self._publish(node, node.position_payload())
 
-    def send_text_round(self, msg_prefix: str = "test") -> None:
+    def send_text_round(self, msg_prefix: str = "test", delay_jitter_ms: int = 0) -> None:
         for node in self._nodes:
             text = f"{msg_prefix} #{self._total_sent + 1}"
             self._publish(node, node.text_payload(text))
@@ -49,3 +50,27 @@ class TrafficGenerator:
     def send_position_round(self) -> None:
         for node in self._nodes:
             self._publish(node, node.position_payload())
+
+    def idle_round(self) -> None:
+        """Send one position per node (beacon)."""
+        for node in self._nodes:
+            self._publish(node, node.position_payload())
+
+    def chat_round(self, vocabulary: list[str]) -> None:
+        """Send one random text from vocabulary per node."""
+        for node in self._nodes:
+            text = random.choice(vocabulary)
+            self._publish(node, node.text_payload(text))
+
+    def walk_round(self, speed_kmh: float, heading_deg: float, interval_s: float = 1.0) -> None:
+        """Move each node by speed_kmh in heading_deg direction, then publish position."""
+        for node in self._nodes:
+            node.step(speed_kmh=speed_kmh, heading_deg=heading_deg, interval_s=interval_s)
+            self._publish(node, node.position_payload())
+
+    def burst_round(self, count: int = 5, msg_prefix: str = "burst") -> None:
+        """Send count texts per node at maximum rate."""
+        for node in self._nodes:
+            for _ in range(count):
+                text = f"{msg_prefix} #{self._total_sent + 1}"
+                self._publish(node, node.text_payload(text))
