@@ -1,6 +1,6 @@
 # Mesh Tester - Task List
 
-> **Last updated:** 2026-04-10 (Task 4 done)
+> **Last updated:** 2026-04-10 (Task 5 done)
 > **Plan:** `docs/superpowers/plans/2026-04-10-mesh-tester.md`
 > **Linear project:** [Mesh Tester](https://linear.app/yayoboy/project/mesh-tester-add1c613c89b)
 
@@ -17,13 +17,13 @@ via subagent-driven development.
 | 1 | Scaffold + Config loader | YAY-200 | done | `9efed0a` |
 | 2 | VirtualNode dataclass | YAY-201 | done | `8d99438` |
 | 3 | MQTT Injector | YAY-202 | done | `6b9311d` |
-| 4 | Traffic Generator | YAY-203 | done | pending |
-| 5 | TUI App Shell | YAY-205 | todo | — |
+| 4 | Traffic Generator | YAY-203 | done | `257f253` |
+| 5 | TUI App Shell | YAY-205 | done | pending |
 | 6 | TUI Node Table + Message Log widgets | YAY-205 | todo | — |
 | 7 | TUI wire-up + `main.py` CLI | YAY-204 | todo | — |
 | H | Hardware bring-up (Board A + Mosquitto) | YAY-206 | todo | — |
 
-**Tests passing:** 20 / 20 (config 4 + virtual_node 7 + mqtt_injector 4 + traffic_generator 5)
+**Tests passing:** 25 / 25 (config 4 + virtual_node 7 + mqtt_injector 4 + traffic_generator 5 + tui_app 5)
 
 ---
 
@@ -86,15 +86,16 @@ Class `TrafficGenerator(injector, nodes, on_send=None)` that orchestrates virtua
 - [x] Run full suite (20 / 20 passing)
 - [x] Commit: `feat: traffic generator with configurable text and position rounds`
 
-## Task 5 — TUI App shell ⏳
+## Task 5 — TUI App shell ✅
 
 **Linear:** YAY-205 · **Files:** `src/tui/__init__.py`, `src/tui/app.py`, `src/tui/widgets/__init__.py`, `src/tui/widgets/status_bar.py`
 
-- [ ] `MeshTesterApp(App)` Textual app with 4-region grid (nodes, traffic, log, status)
-- [ ] Key bindings: `s` start, `p` pause, `x` stop, `q` quit, `tab` focus cycle
-- [ ] `StatusBar` widget — MQTT state, Board A, scenario, uptime
-- [ ] Smoke test using Textual `App.run_test()` — verify mount + bindings
-- [ ] Commit: `feat: TUI app shell with key bindings and status bar`
+- [x] `MeshTesterApp(App)` Textual app with 4-region grid (nodes, traffic, log, status)
+- [x] Key bindings: `s` start, `p` pause, `x` stop, `q` quit, `tab` focus cycle
+- [x] Scenario switch on `1/2/3` keys (action_set_scenario)
+- [x] `StatusBar` widget — MQTT state (●/○), Board A (●/○), run state, scenario, uptime ticker
+- [x] Smoke tests using Textual `App.run_test()` — 5 tests: mount, panels, bindings, start/stop actions
+- [x] Commit: `feat: TUI app shell with key bindings and status bar`
 
 ## Task 6 — TUI widgets: Node Table + Message Log ⏳
 
@@ -137,5 +138,5 @@ Class `TrafficGenerator(injector, nodes, on_send=None)` that orchestrates virtua
 
 1. Activate venv: `source .venv/bin/activate`
 2. Read this file + `docs/superpowers/plans/2026-04-10-mesh-tester.md`
-3. Current in-progress task: **Task 5 — TUI App Shell**
+3. Current in-progress task: **Task 6 — TUI Node Table + Message Log widgets**
 4. Continue subagent-driven dispatch (implementer → spec review → code review → commit)
