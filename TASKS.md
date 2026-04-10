@@ -30,13 +30,13 @@ via subagent-driven development.
 | A | Config refactor | `config.py` → dataclasses, no YAML, JSON save/load | done | `c40855c` |
 | B | Zone + Factory | `zone.py` presets Italia + `node_factory.py` scatter | done | `4aab0c8` |
 | C | VirtualNode v2 | walk, telemetry, rogue mode, prefix | done | pending |
-| D | Scenarios v2 | idle / chat / walk / burst / replay in TrafficGenerator | todo | — |
-| E | Recorder | `recorder.py` — registra sessione reale, replay | todo | — |
-| F | TUI v2 | ZonePicker, ScenarioPanel, NodeDetail popup, mouse | todo | — |
-| G | main.py v2 | multi-gateway, new config API, zone/factory wiring | todo | — |
+| D | Scenarios v2 | idle / chat / walk / burst / replay in TrafficGenerator | done | `8e1e3df` |
+| E | Recorder | `recorder.py` — registra sessione reale, replay | done | `5a6baed` |
+| F | TUI v2 | ZonePicker, ScenarioPanel, NodeDetail popup, mouse | done | `38a12c1` |
+| G | main.py v2 | multi-gateway, new config API, zone/factory wiring | done | `ab9f5c7` |
 
 **Tests passing (v1):** 35 / 35
-**Tests passing (v2):** 57 / 57 (Task A + B + C done)
+**Tests passing (v2):** 84 / 84 (Tasks A–G complete)
 
 ---
 
@@ -185,7 +185,7 @@ Class `TrafficGenerator(injector, nodes, on_send=None)` that orchestrates virtua
 - [ ] `is_rogue: bool = False` → se True, `text_payload` produce payload malformato
 - [ ] Tests: step sposta coordinate, telemetry ha campi corretti, rogue produce payload invalido
 
-## Task D — Scenari v2 ⏳
+## Task D — Scenari v2 ✅
 
 **Files:** `src/traffic_generator.py` (extend), `tests/test_traffic_generator.py` (extend)
 
@@ -196,7 +196,7 @@ Class `TrafficGenerator(injector, nodes, on_send=None)` that orchestrates virtua
 - [ ] `delay_jitter_ms` param su tutti i round (ritardo realistico LoRa)
 - [ ] Tests per ogni nuovo scenario
 
-## Task E — Recorder ⏳
+## Task E — Recorder ✅
 
 **Files:** `src/recorder.py` (new), `tests/test_recorder.py`
 
@@ -205,7 +205,7 @@ Class `TrafficGenerator(injector, nodes, on_send=None)` that orchestrates virtua
 - [ ] `replay(path, injector, speed_multiplier=1.0)` — riproduce sessione registrata
 - [ ] Tests: record scrive file, replay chiama publish nell'ordine corretto
 
-## Task F — TUI v2 ⏳
+## Task F — TUI v2 ✅
 
 **Files:** `src/tui/widgets/zone_picker.py`, `src/tui/widgets/scenario_panel.py`, `src/tui/widgets/node_detail.py`, update `src/tui/app.py`
 
@@ -216,7 +216,7 @@ Class `TrafficGenerator(injector, nodes, on_send=None)` that orchestrates virtua
 - [ ] MQTT dot in StatusBar cliccabile (connect/disconnect)
 - [ ] Tests: smoke mount + interazioni base
 
-## Task G — main.py v2 ⏳
+## Task G — main.py v2 ✅
 
 **Files:** `main.py` (update), `src/mqtt_injector.py` (extend multi-gateway)
 
