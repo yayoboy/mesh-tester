@@ -28,15 +28,15 @@ via subagent-driven development.
 | # | Task | Description | Status | Commit |
 |---|------|-------------|--------|--------|
 | A | Config refactor | `config.py` → dataclasses, no YAML, JSON save/load | done | `c40855c` |
-| B | Zone + Factory | `zone.py` presets Italia + `node_factory.py` scatter | done | pending |
-| C | VirtualNode v2 | walk, telemetry, rogue mode, prefix | todo | — |
+| B | Zone + Factory | `zone.py` presets Italia + `node_factory.py` scatter | done | `4aab0c8` |
+| C | VirtualNode v2 | walk, telemetry, rogue mode, prefix | done | pending |
 | D | Scenarios v2 | idle / chat / walk / burst / replay in TrafficGenerator | todo | — |
 | E | Recorder | `recorder.py` — registra sessione reale, replay | todo | — |
 | F | TUI v2 | ZonePicker, ScenarioPanel, NodeDetail popup, mouse | todo | — |
 | G | main.py v2 | multi-gateway, new config API, zone/factory wiring | todo | — |
 
 **Tests passing (v1):** 35 / 35
-**Tests passing (v2):** 51 / 51 (Task A + B done)
+**Tests passing (v2):** 57 / 57 (Task A + B + C done)
 
 ---
 
@@ -175,7 +175,7 @@ Class `TrafficGenerator(injector, nodes, on_send=None)` that orchestrates virtua
 - [ ] Replace temporary node gen in `main.py` with `NodeFactory`
 - [ ] Tests: preset coords, scatter within radius, prefix in longname/shortname
 
-## Task C — VirtualNode v2 ⏳
+## Task C — VirtualNode v2 ✅
 
 **Files:** `src/virtual_node.py` (extend), `tests/test_virtual_node.py` (extend)
 
