@@ -7,3 +7,6 @@ reports/
 .claude/
 docs/obsidian
 
+# Generated
+screenshot.png
+screenshot.svg
