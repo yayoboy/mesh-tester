@@ -3,17 +3,20 @@
 
 Usage:
     python main.py [--config PATH] [--scenario NAME] [--dry-run]
+                   [--zone PRESET] [--count N] [--prefix PREFIX]
+                   [--save-config PATH]
 """
 from __future__ import annotations
 
 import argparse
 import sys
 
-from src.config import AppConfig, ConfigError, load_config
+from src.config import AppConfig, ConfigError, ZoneConfig, save_config, load_config
 from src.mqtt_injector import MqttInjector
 from src.node_factory import NodeFactory
 from src.tui.app import MeshTesterApp
 from src.virtual_node import VirtualNode
+from src.zone import ITALY_PRESETS
 
 
 def _make_nodes(cfg: AppConfig) -> list[VirtualNode]:
@@ -36,12 +39,37 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--scenario",
         default=None,
         metavar="NAME",
-        help="Scenario to activate on start",
+        help="Scenario to activate on start (idle/chat/walk/burst)",
     )
     p.add_argument(
         "--dry-run",
         action="store_true",
         help="Print resolved config and exit without connecting to MQTT",
+    )
+    p.add_argument(
+        "--zone",
+        default=None,
+        metavar="PRESET",
+        help=f"Zone preset: {', '.join(ITALY_PRESETS)} (overrides config)",
+    )
+    p.add_argument(
+        "--count",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Number of virtual nodes to generate (overrides config)",
+    )
+    p.add_argument(
+        "--prefix",
+        default=None,
+        metavar="PREFIX",
+        help="Node name prefix e.g. TST (overrides config)",
+    )
+    p.add_argument(
+        "--save-config",
+        default=None,
+        metavar="PATH",
+        help="Save the resolved config to a JSON file and exit",
     )
     return p
 
@@ -67,6 +95,29 @@ def dry_run(cfg: AppConfig, nodes: list[VirtualNode]) -> None:
     print()
 
 
+def _apply_cli_overrides(cfg: AppConfig, args: argparse.Namespace) -> None:
+    """Apply CLI flag overrides onto *cfg* in-place."""
+    if args.zone:
+        if args.zone in ITALY_PRESETS:
+            preset = ITALY_PRESETS[args.zone]
+            cfg.zone = ZoneConfig(
+                name=preset.name,
+                center_lat=preset.center_lat,
+                center_lon=preset.center_lon,
+                radius_km=preset.radius_km,
+            )
+        else:
+            print(
+                f"Warning: unknown zone '{args.zone}'. "
+                f"Available: {', '.join(ITALY_PRESETS)}",
+                file=sys.stderr,
+            )
+    if args.count is not None:
+        cfg.nodes.count = args.count
+    if args.prefix is not None:
+        cfg.nodes.prefix = args.prefix
+
+
 def main(argv=None) -> None:
     parser = build_arg_parser()
     args = parser.parse_args(argv)
@@ -77,7 +128,13 @@ def main(argv=None) -> None:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
 
+    _apply_cli_overrides(cfg, args)
     nodes = _make_nodes(cfg)
+
+    if args.save_config:
+        save_config(cfg, args.save_config)
+        print(f"Config saved to {args.save_config}")
+        return
 
     if args.dry_run:
         dry_run(cfg, nodes)
@@ -88,7 +145,7 @@ def main(argv=None) -> None:
         port=cfg.mqtt.port,
         topic_root=cfg.mqtt.topic_root,
         channel=cfg.mqtt.channel,
-        gateway_id=cfg.mqtt.gateway_ids[0],
+        gateway_ids=cfg.mqtt.gateway_ids,
     )
     initial_scenario = args.scenario or cfg.zone.name
 
