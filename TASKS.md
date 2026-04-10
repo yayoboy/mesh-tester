@@ -27,8 +27,8 @@ via subagent-driven development.
 
 | # | Task | Description | Status | Commit |
 |---|------|-------------|--------|--------|
-| A | Config refactor | `config.py` → dataclasses, no YAML, JSON save/load | done | pending |
-| B | Zone + Factory | `zone.py` presets Italia + `node_factory.py` scatter | todo | — |
+| A | Config refactor | `config.py` → dataclasses, no YAML, JSON save/load | done | `c40855c` |
+| B | Zone + Factory | `zone.py` presets Italia + `node_factory.py` scatter | done | pending |
 | C | VirtualNode v2 | walk, telemetry, rogue mode, prefix | todo | — |
 | D | Scenarios v2 | idle / chat / walk / burst / replay in TrafficGenerator | todo | — |
 | E | Recorder | `recorder.py` — registra sessione reale, replay | todo | — |
@@ -36,7 +36,7 @@ via subagent-driven development.
 | G | main.py v2 | multi-gateway, new config API, zone/factory wiring | todo | — |
 
 **Tests passing (v1):** 35 / 35
-**Tests passing (v2):** 38 / 38 (Task A done)
+**Tests passing (v2):** 51 / 51 (Task A + B done)
 
 ---
 
@@ -165,7 +165,7 @@ Class `TrafficGenerator(injector, nodes, on_send=None)` that orchestrates virtua
 - [x] Update `test_main.py`: `dry_run()` now takes `AppConfig` + nodes list
 - [x] Commit: `refactor: config.py → dataclasses, JSON save/load, no YAML required`
 
-## Task B — Zone + Node Factory ⏳
+## Task B — Zone + Node Factory ✅
 
 **Files:** `src/zone.py` (new), `src/node_factory.py` (new), `tests/test_zone.py`, `tests/test_node_factory.py`
 

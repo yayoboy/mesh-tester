@@ -7,42 +7,18 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import hashlib
-import random as _random
 import sys
 
 from src.config import AppConfig, ConfigError, load_config
 from src.mqtt_injector import MqttInjector
+from src.node_factory import NodeFactory
 from src.tui.app import MeshTesterApp
 from src.virtual_node import VirtualNode
 
-_NODE_NAMES = [
-    "Alpha", "Beta", "Gamma", "Delta", "Epsilon",
-    "Zeta", "Eta", "Theta", "Iota", "Kappa",
-]
-
 
 def _make_nodes(cfg: AppConfig) -> list[VirtualNode]:
-    """Generate virtual nodes from zone + pool config.
-
-    Uses a fixed RNG seed so the same config always produces the same nodes.
-    Will be replaced by NodeFactory in Task B.
-    """
-    rng = _random.Random(42)
-    nodes: list[VirtualNode] = []
-    for i in range(cfg.nodes.count):
-        base_name = _NODE_NAMES[i % len(_NODE_NAMES)]
-        raw = f"{cfg.nodes.prefix}-{i}".encode()
-        node_id = "!" + hashlib.sha1(raw).hexdigest()[:8]
-        nodes.append(VirtualNode(
-            id=node_id,
-            longname=f"{cfg.nodes.prefix}_{base_name}",
-            shortname=f"{cfg.nodes.prefix[:2].upper()}{i + 1}",
-            lat=cfg.zone.center_lat + rng.uniform(-0.045, 0.045),
-            lon=cfg.zone.center_lon + rng.uniform(-0.045, 0.045),
-            alt=rng.randint(cfg.nodes.alt_min, cfg.nodes.alt_max),
-        ))
-    return nodes
+    """Generate virtual nodes via NodeFactory (deterministic, seed=42)."""
+    return NodeFactory(cfg.zone, cfg.nodes, seed=42).generate()
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
