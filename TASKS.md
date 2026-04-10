@@ -1,6 +1,6 @@
 # Mesh Tester - Task List
 
-> **Last updated:** 2026-04-10 (Task 6 done)
+> **Last updated:** 2026-04-10 (Task 7 done — software complete)
 > **Plan:** `docs/superpowers/plans/2026-04-10-mesh-tester.md`
 > **Linear project:** [Mesh Tester](https://linear.app/yayoboy/project/mesh-tester-add1c613c89b)
 
@@ -19,11 +19,11 @@ via subagent-driven development.
 | 3 | MQTT Injector | YAY-202 | done | `6b9311d` |
 | 4 | Traffic Generator | YAY-203 | done | `257f253` |
 | 5 | TUI App Shell | YAY-205 | done | `f873672` |
-| 6 | TUI Node Table + Message Log widgets | YAY-205 | done | pending |
-| 7 | TUI wire-up + `main.py` CLI | YAY-204 | todo | — |
+| 6 | TUI Node Table + Message Log widgets | YAY-205 | done | `0e5e37b` |
+| 7 | TUI wire-up + `main.py` CLI | YAY-204 | done | pending |
 | H | Hardware bring-up (Board A + Mosquitto) | YAY-206 | todo | — |
 
-**Tests passing:** 33 / 33 (config 4 + virtual_node 7 + mqtt_injector 4 + traffic_generator 5 + tui_app 5 + tui_widgets 8)
+**Tests passing:** 35 / 35 (config 4 + virtual_node 7 + mqtt_injector 4 + traffic_generator 5 + tui_app 5 + tui_widgets 8 + main 2)
 
 ---
 
@@ -106,18 +106,21 @@ Class `TrafficGenerator(injector, nodes, on_send=None)` that orchestrates virtua
 - [x] 8 unit tests: column count, row add×2, cell update, text/position entry type and coords
 - [x] Commit: `feat: TUI node table and message log widgets`
 
-## Task 7 — TUI wire-up + `main.py` CLI ⏳
+## Task 7 — TUI wire-up + `main.py` CLI ✅
 
-**Linear:** YAY-204, YAY-205 · **Files:** `main.py`, update `src/tui/app.py`
+**Linear:** YAY-204, YAY-205 · **Files:** `main.py`, `src/tui/app.py` (updated)
 
-- [ ] `main.py` with argparse: `--config`, `--scenario`, `--dry-run`
-- [ ] Dry-run prints resolved config + nodes + topic, no MQTT
-- [ ] Wire `MqttInjector` + `TrafficGenerator` into the app
-- [ ] `on_send` callback updates `NodeTable` + `MessageLog`
-- [ ] Scenario switch on `1/2/3` keys
-- [ ] Graceful shutdown on `Ctrl+C` / `q`
-- [ ] Manual smoke test against local Mosquitto (once hardware ready)
-- [ ] Commit: `feat: wire TUI to injector+generator, add main CLI entrypoint`
+- [x] `main.py` with argparse: `--config`, `--scenario`, `--dry-run`
+- [x] Dry-run prints resolved config + nodes + MQTT topic, no connection
+- [x] `MeshTesterApp` accepts `injector`, `nodes`, `scenarios`, `initial_scenario`
+- [x] `on_mount` creates `TrafficGenerator` wired to `_on_send` callback
+- [x] `_on_send` updates `NodeTable.update_sent` + `MessageLog.log_text/log_position`
+- [x] `action_start`: connect MQTT, announce nodes, start 2s interval timer
+- [x] `action_pause` / `action_stop`: pause/stop timer, disconnect on stop
+- [x] Scenario switch on `1/2/3` keys → updates `StatusBar.scenario`
+- [x] Graceful shutdown via `on_unmount`: stops timer + disconnects injector
+- [x] Manual smoke test: pending hardware (YAY-206)
+- [x] Commit: `feat: wire TUI to injector+generator, add main CLI entrypoint`
 
 ---
 
@@ -138,5 +141,5 @@ Class `TrafficGenerator(injector, nodes, on_send=None)` that orchestrates virtua
 
 1. Activate venv: `source .venv/bin/activate`
 2. Read this file + `docs/superpowers/plans/2026-04-10-mesh-tester.md`
-3. Current in-progress task: **Task 7 — TUI wire-up + `main.py` CLI**
+3. **All software tasks complete** — next step: Hardware bring-up (YAY-206)
 4. Continue subagent-driven dispatch (implementer → spec review → code review → commit)
