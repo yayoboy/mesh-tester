@@ -1,23 +1,52 @@
 from __future__ import annotations
 
 import asyncio
+import random
 import time
+from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 
-from src.config import AppConfig, load_config
+from src.config import AppConfig, ZoneConfig, load_config
 from src.mqtt_injector import MqttInjector
 from src.node_factory import NodeFactory
-from src.traffic_generator import TrafficGenerator
 from src.virtual_node import VirtualNode
 from src.zone import ITALY_PRESETS
 
 _STATIC = Path(__file__).parent / "static"
 _CHAT_VOCAB = ["ciao", "hello", "ack", "ok", "test", "ping", "here", "on air"]
+
+
+# ── Scenario profiles ──────────────────────────────────────────────────────────
+
+@dataclass
+class ScenarioProfile:
+    """Per-scenario timing and payload shape.
+
+    Each virtual node runs an independent loop that:
+      1. sleeps ``interval_s * (1 ± jitter_pct)``
+      2. emits ``burst_size`` messages of kind ``kind``
+
+    This gives every node an independent cadence, so scenarios with higher
+    jitter look visibly more chaotic than low-jitter ones.
+    """
+    interval_s: float
+    jitter_pct: float
+    burst_size: int
+    kind: str  # "position" | "chat" | "walk" | "burst_chat"
+
+
+DEFAULT_SCENARIOS: dict[str, ScenarioProfile] = {
+    "idle":  ScenarioProfile(interval_s=60.0, jitter_pct=0.50, burst_size=1, kind="position"),
+    "chat":  ScenarioProfile(interval_s=15.0, jitter_pct=0.70, burst_size=1, kind="chat"),
+    "walk":  ScenarioProfile(interval_s=8.0,  jitter_pct=0.20, burst_size=1, kind="walk"),
+    "burst": ScenarioProfile(interval_s=6.0,  jitter_pct=0.10, burst_size=5, kind="burst_chat"),
+}
 
 
 # ── WebSocket connection manager ───────────────────────────────────────────────
@@ -48,11 +77,7 @@ class ConnectionManager:
 # ── Per-node injector ──────────────────────────────────────────────────────────
 
 class NodeInjector:
-    """Wraps a dedicated MqttInjector for a single virtual node (multi-board mode).
-
-    In multi-board mode each VirtualNode publishes via its own gateway topic
-    (topic_root/json/channel/<node.id>), so the mesh sees it as a separate board.
-    """
+    """Wraps a dedicated MqttInjector for a single virtual node (multi-board mode)."""
 
     def __init__(self, node: VirtualNode, cfg: AppConfig) -> None:
         self._node = node
@@ -61,7 +86,7 @@ class NodeInjector:
             port=cfg.mqtt.port,
             topic_root=cfg.mqtt.topic_root,
             channel=cfg.mqtt.channel,
-            gateway_id=node.id,           # ← node ID used as gateway ID
+            gateway_id=node.id,
         )
 
     @property
@@ -91,53 +116,13 @@ class NodeInjector:
         return self._inj.publish(self._node, payload)
 
 
-# ── Runtime state ──────────────────────────────────────────────────────────────
-
-class MeshState:
-    def __init__(self, cfg: AppConfig) -> None:
-        self.cfg = cfg
-        self.nodes: list[VirtualNode] = NodeFactory(
-            cfg.zone, cfg.nodes, seed=42
-        ).generate()
-        # One injector per node (multi-board mode)
-        self.node_injectors: list[NodeInjector] = []
-        # Single TrafficGenerator uses a "proxy" injector
-        self.proxy_injector: Optional[_ProxyInjector] = None
-        self.generator: Optional[TrafficGenerator] = None
-        self.running: bool = False
-        self.paused: bool = False
-        self.mqtt_connected: bool = False
-        self.active_scenario: str = "idle"
-        self.sent_per_node: dict[str, int] = {}
-        self._start_time: float = 0.0
-        self._loop_task: Optional[asyncio.Task] = None
-
-    def rebuild_nodes(self) -> None:
-        """Regenerate nodes from current config (e.g. after zone change)."""
-        self.nodes = NodeFactory(self.cfg.zone, self.cfg.nodes, seed=42).generate()
-        self.sent_per_node = {}
-
-    def board_info(self) -> list[dict]:
-        """Return per-node board info (id, topic, connected)."""
-        return [
-            {
-                "node_id": ni.node.id,
-                "topic": ni.topic,
-                "connected": ni.connected,
-            }
-            for ni in self.node_injectors
-        ]
-
-
-# ── Proxy injector: dispatches publish to per-node injector ───────────────────
+# ── Proxy injector ─────────────────────────────────────────────────────────────
 
 class _ProxyInjector:
-    """Looks like MqttInjector to TrafficGenerator but routes each publish
-    to the NodeInjector that owns that node."""
+    """Fans a publish to the right NodeInjector. Kept for grouped connect/disconnect."""
 
     def __init__(self, node_injectors: list[NodeInjector]) -> None:
         self._map = {ni.node.id: ni for ni in node_injectors}
-        # topic is the first node's topic (satisfies TrafficGenerator.topic attr)
         self.topic = next(iter(self._map.values())).topic if self._map else ""
         self._connected = False
 
@@ -162,6 +147,62 @@ class _ProxyInjector:
         return time.time()
 
 
+# ── Runtime state ──────────────────────────────────────────────────────────────
+
+class MeshState:
+    def __init__(self, cfg: AppConfig) -> None:
+        self.cfg = cfg
+        self.nodes: list[VirtualNode] = NodeFactory(
+            cfg.zone, cfg.nodes, seed=42
+        ).generate()
+        self.node_injectors: list[NodeInjector] = []
+        self.proxy_injector: Optional[_ProxyInjector] = None
+        self.running: bool = False
+        self.paused: bool = False
+        self.mqtt_connected: bool = False
+        self.active_scenario: str = "idle"
+        self.scenarios: dict[str, ScenarioProfile] = {
+            k: ScenarioProfile(**asdict(v)) for k, v in DEFAULT_SCENARIOS.items()
+        }
+        self.sent_per_node: dict[str, int] = {}
+        self.total_sent: int = 0
+        self._start_time: float = 0.0
+        self._node_tasks: list[asyncio.Task] = []
+
+    def rebuild_nodes(self) -> None:
+        self.nodes = NodeFactory(self.cfg.zone, self.cfg.nodes, seed=42).generate()
+        self.sent_per_node = {}
+        self.total_sent = 0
+
+
+# ── Request schemas ────────────────────────────────────────────────────────────
+
+class CustomZoneBody(BaseModel):
+    name: str = Field(default="Custom", max_length=40)
+    lat: float = Field(ge=-90, le=90)
+    lon: float = Field(ge=-180, le=180)
+    radius_km: float = Field(default=5.0, gt=0, le=200)
+
+
+class ScenarioProfileBody(BaseModel):
+    interval_s: Optional[float] = Field(default=None, gt=0, le=3600)
+    jitter_pct: Optional[float] = Field(default=None, ge=0, le=1)
+    burst_size: Optional[int] = Field(default=None, ge=1, le=50)
+
+
+class NodeCountBody(BaseModel):
+    count: int = Field(ge=1, le=50)
+
+
+class NodePatchBody(BaseModel):
+    longname: Optional[str] = Field(default=None, max_length=40)
+    shortname: Optional[str] = Field(default=None, max_length=4)
+    lat: Optional[float] = Field(default=None, ge=-90, le=90)
+    lon: Optional[float] = Field(default=None, ge=-180, le=180)
+    alt: Optional[int] = Field(default=None, ge=-500, le=10000)
+    is_rogue: Optional[bool] = None
+
+
 # ── App factory ────────────────────────────────────────────────────────────────
 
 def create_app(cfg: Optional[AppConfig] = None) -> FastAPI:
@@ -184,10 +225,16 @@ def create_app(cfg: Optional[AppConfig] = None) -> FastAPI:
             "paused": state.paused,
             "mqtt_connected": state.mqtt_connected,
             "scenario": state.active_scenario,
-            "total_sent": state.generator.total_sent if state.generator else 0,
+            "total_sent": state.total_sent,
             "uptime": elapsed,
             "zone": state.cfg.zone.name,
+            "zone_center": {
+                "lat": state.cfg.zone.center_lat,
+                "lon": state.cfg.zone.center_lon,
+                "radius_km": state.cfg.zone.radius_km,
+            },
             "node_count": len(state.nodes),
+            "scenarios": {k: asdict(v) for k, v in state.scenarios.items()},
         }
 
     def _node_list() -> list[dict]:
@@ -208,66 +255,105 @@ def create_app(cfg: Optional[AppConfig] = None) -> FastAPI:
             for n in state.nodes
         ]
 
-    # ── on_send callback ───────────────────────────────────────────────────────
+    # ── Emit a single payload (publish + counters + ws broadcast) ─────────────
 
-    def _on_send(node: VirtualNode, payload: dict, topic: str) -> None:
+    async def _emit(node: VirtualNode, payload: dict) -> None:
+        if state.proxy_injector is None:
+            return
+        state.proxy_injector.publish(node, payload)
         state.sent_per_node[node.id] = state.sent_per_node.get(node.id, 0) + 1
+        state.total_sent += 1
         ts = time.time()
 
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            return
-
-        loop.create_task(manager.broadcast({
+        await manager.broadcast({
             "type": "node_update",
             "node_id": node.id,
             "sent": state.sent_per_node[node.id],
             "lat": round(node.lat, 6),
             "lon": round(node.lon, 6),
-        }))
+            "total_sent": state.total_sent,
+        })
 
         ptype = payload.get("type")
         if ptype == "sendtext":
-            loop.create_task(manager.broadcast({
-                "type": "log",
-                "level": "text",
-                "node": node.longname,
-                "node_id": node.id,
-                "text": str(payload.get("payload", "")),
-                "ts": ts,
-            }))
+            await manager.broadcast({
+                "type": "log", "level": "text",
+                "node": node.longname, "node_id": node.id,
+                "text": str(payload.get("payload", "")), "ts": ts,
+            })
         elif ptype == "sendposition":
-            loop.create_task(manager.broadcast({
-                "type": "log",
-                "level": "position",
-                "node": node.longname,
-                "node_id": node.id,
-                "lat": round(node.lat, 6),
-                "lon": round(node.lon, 6),
+            await manager.broadcast({
+                "type": "log", "level": "position",
+                "node": node.longname, "node_id": node.id,
+                "lat": round(node.lat, 6), "lon": round(node.lon, 6),
                 "ts": ts,
-            }))
+            })
 
-    # ── traffic loop ───────────────────────────────────────────────────────────
+    # ── Per-node loop ─────────────────────────────────────────────────────────
 
-    async def _traffic_loop() -> None:
+    async def _node_loop(node: VirtualNode) -> None:
+        """One independent scheduler per node; gives visibly distinct cadences."""
+        # stagger initial start so nodes don't all fire in lockstep
+        await asyncio.sleep(random.uniform(0, 4.0))
         while state.running:
-            if not state.paused and state.generator:
-                scenario = state.active_scenario
-                if scenario == "idle":
-                    state.generator.idle_round()
-                elif scenario == "chat":
-                    state.generator.chat_round(vocabulary=_CHAT_VOCAB)
-                elif scenario == "walk":
-                    state.generator.walk_round(speed_kmh=3.6, heading_deg=0)
-                elif scenario == "burst":
-                    state.generator.burst_round(count=3)
-                else:
-                    state.generator.send_text_round(msg_prefix=scenario)
+            profile = state.scenarios.get(state.active_scenario)
+            if profile is None:
+                await asyncio.sleep(1.0)
+                continue
 
-                await manager.broadcast({"type": "status", **_status_dict()})
+            delta = (random.random() * 2 - 1) * profile.jitter_pct
+            sleep_s = max(0.2, profile.interval_s * (1.0 + delta))
 
-            await asyncio.sleep(2.0)
+            try:
+                await asyncio.sleep(sleep_s)
+            except asyncio.CancelledError:
+                return
+
+            if not state.running:
+                return
+            if state.paused:
+                continue
+
+            profile = state.scenarios.get(state.active_scenario)
+            if profile is None:
+                continue
+
+            try:
+                if profile.kind == "position":
+                    await _emit(node, node.position_payload())
+                elif profile.kind == "chat":
+                    for _ in range(profile.burst_size):
+                        text = random.choice(_CHAT_VOCAB)
+                        await _emit(node, node.text_payload(text))
+                        if profile.burst_size > 1:
+                            await asyncio.sleep(0.08)
+                elif profile.kind == "walk":
+                    node.step(
+                        speed_kmh=3.6,
+                        heading_deg=random.randint(0, 359),
+                        interval_s=profile.interval_s,
+                    )
+                    await _emit(node, node.position_payload())
+                elif profile.kind == "burst_chat":
+                    for i in range(profile.burst_size):
+                        text = f"burst#{state.total_sent + 1}"
+                        await _emit(node, node.text_payload(text))
+                        await asyncio.sleep(0.05)
+            except Exception as exc:  # pragma: no cover
+                print(f"[_node_loop] {node.id} error: {exc}")
+
+            await manager.broadcast({"type": "status", **_status_dict()})
+
+    async def _cancel_tasks() -> None:
+        for t in state._node_tasks:
+            if not t.done():
+                t.cancel()
+        for t in state._node_tasks:
+            try:
+                await t
+            except (asyncio.CancelledError, Exception):
+                pass
+        state._node_tasks = []
 
     # ── routes ─────────────────────────────────────────────────────────────────
 
@@ -285,8 +371,10 @@ def create_app(cfg: Optional[AppConfig] = None) -> FastAPI:
 
     @app.get("/api/boards")
     async def get_boards() -> list:
-        """Return per-node board / gateway info."""
-        return state.board_info()
+        return [
+            {"node_id": ni.node.id, "topic": ni.topic, "connected": ni.connected}
+            for ni in state.node_injectors
+        ]
 
     @app.get("/api/zones")
     async def get_zones() -> list:
@@ -305,12 +393,10 @@ def create_app(cfg: Optional[AppConfig] = None) -> FastAPI:
             await manager.broadcast({"type": "status", **_status_dict()})
             return {"ok": True, "action": "resumed"}
 
-        # Build one NodeInjector per virtual node (multi-board)
         state.node_injectors = [NodeInjector(n, state.cfg) for n in state.nodes]
         state.proxy_injector = _ProxyInjector(state.node_injectors)
-        state.generator = TrafficGenerator(
-            state.proxy_injector, state.nodes, on_send=_on_send
-        )
+        state.sent_per_node = {n.id: 0 for n in state.nodes}
+        state.total_sent = 0
 
         try:
             state.proxy_injector.connect()
@@ -318,10 +404,15 @@ def create_app(cfg: Optional[AppConfig] = None) -> FastAPI:
         except Exception as exc:
             return {"ok": False, "reason": f"MQTT connect failed: {exc}"}
 
-        state.generator.announce_nodes()
+        # Announce initial positions
+        for n in state.nodes:
+            await _emit(n, n.position_payload())
+
         state.running = True
         state._start_time = time.time()
-        state._loop_task = asyncio.create_task(_traffic_loop())
+        state._node_tasks = [
+            asyncio.create_task(_node_loop(n)) for n in state.nodes
+        ]
 
         await manager.broadcast({"type": "status", **_status_dict()})
         await manager.broadcast({"type": "nodes_snapshot", "nodes": _node_list()})
@@ -339,9 +430,7 @@ def create_app(cfg: Optional[AppConfig] = None) -> FastAPI:
     async def stop() -> dict:
         state.running = False
         state.paused = False
-        if state._loop_task and not state._loop_task.done():
-            state._loop_task.cancel()
-            state._loop_task = None
+        await _cancel_tasks()
         if state.proxy_injector:
             state.proxy_injector.disconnect()
             state.mqtt_connected = False
@@ -350,12 +439,50 @@ def create_app(cfg: Optional[AppConfig] = None) -> FastAPI:
 
     @app.post("/api/scenario/{name}")
     async def set_scenario(name: str) -> dict:
-        valid = {"idle", "chat", "walk", "burst"}
-        if name not in valid:
-            return {"ok": False, "reason": f"unknown scenario; valid: {sorted(valid)}"}
+        if name not in state.scenarios:
+            return {"ok": False, "reason": f"unknown scenario; valid: {sorted(state.scenarios)}"}
         state.active_scenario = name
         await manager.broadcast({"type": "status", **_status_dict()})
         return {"ok": True, "scenario": name}
+
+    @app.post("/api/config/scenario/{name}")
+    async def config_scenario(name: str, body: ScenarioProfileBody) -> dict:
+        if name not in state.scenarios:
+            return {"ok": False, "reason": f"unknown scenario; valid: {sorted(state.scenarios)}"}
+        prof = state.scenarios[name]
+        if body.interval_s is not None:
+            prof.interval_s = body.interval_s
+        if body.jitter_pct is not None:
+            prof.jitter_pct = body.jitter_pct
+        if body.burst_size is not None:
+            prof.burst_size = body.burst_size
+        await manager.broadcast({"type": "status", **_status_dict()})
+        return {"ok": True, "scenario": name, "profile": asdict(prof)}
+
+    @app.post("/api/config/nodes")
+    async def config_node_count(body: NodeCountBody) -> dict:
+        if state.running:
+            return {"ok": False, "reason": "stop traffic first"}
+        state.cfg.nodes.count = body.count
+        state.rebuild_nodes()
+        await manager.broadcast({"type": "nodes_snapshot", "nodes": _node_list()})
+        await manager.broadcast({"type": "status", **_status_dict()})
+        return {"ok": True, "count": body.count}
+
+    @app.post("/api/zone/custom")
+    async def set_zone_custom(body: CustomZoneBody) -> dict:
+        if state.running:
+            return {"ok": False, "reason": "stop traffic first"}
+        state.cfg.zone = ZoneConfig(
+            name=body.name or "Custom",
+            center_lat=body.lat,
+            center_lon=body.lon,
+            radius_km=body.radius_km,
+        )
+        state.rebuild_nodes()
+        await manager.broadcast({"type": "nodes_snapshot", "nodes": _node_list()})
+        await manager.broadcast({"type": "status", **_status_dict()})
+        return {"ok": True, "zone": body.name}
 
     @app.post("/api/zone/{name}")
     async def set_zone(name: str) -> dict:
@@ -368,6 +495,26 @@ def create_app(cfg: Optional[AppConfig] = None) -> FastAPI:
         await manager.broadcast({"type": "nodes_snapshot", "nodes": _node_list()})
         await manager.broadcast({"type": "status", **_status_dict()})
         return {"ok": True, "zone": name}
+
+    @app.patch("/api/nodes/{node_id}")
+    async def patch_node(node_id: str, body: NodePatchBody) -> dict:
+        target = next((n for n in state.nodes if n.id == node_id), None)
+        if target is None:
+            return {"ok": False, "reason": "node not found"}
+        if body.longname is not None:
+            target.longname = body.longname
+        if body.shortname is not None:
+            target.shortname = body.shortname
+        if body.lat is not None:
+            target.lat = body.lat
+        if body.lon is not None:
+            target.lon = body.lon
+        if body.alt is not None:
+            target.alt = body.alt
+        if body.is_rogue is not None:
+            target.is_rogue = body.is_rogue
+        await manager.broadcast({"type": "nodes_snapshot", "nodes": _node_list()})
+        return {"ok": True, "node_id": node_id}
 
     @app.websocket("/ws")
     async def websocket_endpoint(ws: WebSocket) -> None:

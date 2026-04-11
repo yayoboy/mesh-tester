@@ -15,6 +15,7 @@
           colors: {
             surface: { DEFAULT: '#0d1117', 1: '#161b22', 2: '#21262d', 3: '#30363d', 4: '#484f58' },
             ink:     { DEFAULT: '#c9d1d9', muted: '#8b949e', faint: '#484f58' },
+            accent:  { DEFAULT: '#58a6ff', dim: '#1f6feb' },
           },
           fontFamily: { mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'] },
         },
@@ -22,8 +23,12 @@
     }
   </script>
 
-  <!-- Phosphor Icons (duotone) -->
+  <!-- Phosphor Icons -->
   <script src="https://unpkg.com/@phosphor-icons/web@2.1.1"></script>
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <!-- Alpine.js -->
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
@@ -32,43 +37,101 @@
     [x-cloak] { display: none !important; }
     body { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 
-    /* Phosphor icon sizing helpers */
     .ph-xs  { font-size: 12px; }
     .ph-sm  { font-size: 14px; }
     .ph-md  { font-size: 16px; }
     .ph-lg  { font-size: 20px; }
 
-    #log-feed { max-height: 220px; overflow-y: auto; scroll-behavior: smooth; }
+    /* Leaflet dark tweak */
+    #map { height: 100%; width: 100%; background: #0d1117; }
+    .leaflet-container { background: #0d1117; }
+    .leaflet-tile-pane { filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.7); }
+    .leaflet-control-attribution { background: rgba(13,17,23,0.7) !important; color: #8b949e !important; font-size: 9px; }
+    .leaflet-control-attribution a { color: #58a6ff !important; }
+    .leaflet-control-zoom a {
+      background: #161b22 !important;
+      color: #c9d1d9 !important;
+      border: 1px solid #30363d !important;
+    }
+    .leaflet-control-zoom a:hover { background: #21262d !important; }
+
+    .node-marker {
+      width: 14px; height: 14px; border-radius: 50%;
+      border: 2px solid #0d1117;
+      box-shadow: 0 0 0 1px #30363d, 0 0 6px rgba(88,166,255,0.5);
+      transition: transform 0.2s;
+    }
+    .node-marker:hover { transform: scale(1.3); cursor: pointer; }
+    .node-marker.ok    { background: #39d353; }
+    .node-marker.rogue { background: #f85149; }
+    @keyframes mpulse { 0%,100% { box-shadow: 0 0 0 1px #30363d, 0 0 6px rgba(88,166,255,0.5); } 50% { box-shadow: 0 0 0 1px #30363d, 0 0 14px rgba(88,166,255,0.9); } }
+    .node-marker.active { animation: mpulse 0.6s ease; }
+
+    .leaflet-tooltip.node-tip {
+      background: #161b22;
+      color: #c9d1d9;
+      border: 1px solid #30363d;
+      font-family: ui-monospace, monospace;
+      font-size: 10px;
+      padding: 4px 6px;
+    }
+    .leaflet-tooltip.node-tip::before { display: none; }
+
+    #log-feed { max-height: 180px; overflow-y: auto; scroll-behavior: smooth; }
     #log-feed::-webkit-scrollbar { width: 4px; }
     #log-feed::-webkit-scrollbar-thumb { background: #30363d; border-radius: 2px; }
 
-    .node-table tbody tr { transition: background 0.15s; }
+    .node-table tbody tr { transition: background 0.15s; cursor: pointer; }
     .node-table tbody tr:hover { background: #21262d; }
-    @keyframes rowflash { 0%,100% { background: transparent } 50% { background: #21262d } }
-    .row-flash { animation: rowflash 0.4s ease; }
+    @keyframes rowflash { 0%,100% { background: transparent } 50% { background: rgba(88,166,255,0.15) } }
+    .row-flash { animation: rowflash 0.5s ease; }
+    .node-table tbody tr.selected { background: rgba(88,166,255,0.15); }
+
+    /* Custom range slider */
+    input[type="range"] {
+      -webkit-appearance: none;
+      width: 100%;
+      background: transparent;
+      cursor: pointer;
+    }
+    input[type="range"]::-webkit-slider-runnable-track {
+      height: 4px;
+      background: #30363d;
+      border-radius: 2px;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      height: 14px; width: 14px; border-radius: 50%;
+      background: #58a6ff;
+      margin-top: -5px;
+      box-shadow: 0 0 0 1px #0d1117;
+    }
+
+    /* Drawer transitions */
+    .drawer { transition: transform 0.25s ease; }
+    .drawer.closed { transform: translateX(110%); }
+
+    /* Sparkline */
+    .sparkline { height: 28px; width: 100%; }
   </style>
 </head>
 
-<body class="bg-surface text-ink min-h-screen flex flex-col" x-cloak>
+<body class="bg-surface text-ink min-h-screen flex flex-col overflow-hidden h-screen" x-cloak>
 
   <!-- ───────────────────────── HEADER ──────────────────────────────────── -->
-  <header class="bg-surface-1 border-b border-surface-3 px-5 py-2.5 flex items-center gap-5 flex-wrap select-none">
-
-    <!-- Logo -->
+  <header class="bg-surface-1 border-b border-surface-3 px-4 py-2 flex items-center gap-4 flex-wrap select-none shrink-0">
     <div class="flex items-center gap-2">
-      <i class="ph-duotone ph-broadcast ph-lg text-blue-400"></i>
+      <i class="ph-duotone ph-broadcast ph-lg text-accent"></i>
       <span class="text-ink font-semibold text-sm tracking-wide">Mesh Tester</span>
     </div>
 
-    <!-- MQTT status -->
-    <div class="flex items-center gap-1.5 text-xs">
+    <div class="flex items-center gap-1.5 text-[11px]">
       <span :class="status.mqtt_connected ? 'bg-green-500' : 'bg-red-500'"
             class="w-2 h-2 rounded-full inline-block"></span>
       <span class="text-ink-muted">MQTT</span>
     </div>
 
-    <!-- Run status -->
-    <div class="flex items-center gap-1.5 text-xs">
+    <div class="flex items-center gap-1.5 text-[11px]">
       <template x-if="status.running && !status.paused">
         <span class="bg-green-500 w-2 h-2 rounded-full"></span>
       </template>
@@ -79,24 +142,18 @@
         <span class="bg-surface-4 w-2 h-2 rounded-full"></span>
       </template>
       <span class="text-ink-muted"
-        x-text="status.running && !status.paused ? 'running' : status.paused ? 'paused' : 'idle'">
-      </span>
+            x-text="status.running && !status.paused ? 'running' : status.paused ? 'paused' : 'idle'"></span>
     </div>
 
-    <!-- Scenario -->
-    <div class="text-xs text-ink-muted">
-      Scenario: <span class="text-blue-400 font-medium" x-text="status.scenario || '—'"></span>
+    <div class="text-[11px] text-ink-muted">
+      Scenario: <span class="text-accent font-medium" x-text="status.scenario || '—'"></span>
     </div>
 
-    <!-- Zone -->
-    <div class="text-xs text-ink-muted">
+    <div class="text-[11px] text-ink-muted">
       Zone: <span class="text-ink" x-text="status.zone || '—'"></span>
     </div>
 
-    <!-- Right side stats -->
-    <div class="ml-auto flex items-center gap-5 text-xs text-ink-muted">
-      <span>Boards: <span class="text-ink font-medium" x-text="nodes.length"></span></span>
-      <span>Sent: <span class="text-ink font-medium" x-text="status.total_sent || 0"></span></span>
+    <div class="ml-auto flex items-center gap-4 text-[11px] text-ink-muted">
       <span class="flex items-center gap-1">
         <i class="ph-duotone ph-clock ph-sm"></i>
         <span x-text="uptimeStr"></span>
@@ -104,25 +161,226 @@
     </div>
   </header>
 
-  <!-- ───────────────────────── MAIN GRID ───────────────────────────────── -->
-  <div class="flex-1 flex overflow-hidden">
+  <!-- ───────────────────────── STAT CARDS ──────────────────────────────── -->
+  <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-2 px-4 py-3 bg-surface-1 border-b border-surface-3 shrink-0">
+    <!-- Boards -->
+    <div class="bg-surface-2 border border-surface-3 rounded px-3 py-2">
+      <div class="flex items-center justify-between">
+        <span class="text-[9px] text-ink-faint uppercase tracking-wider">Boards</span>
+        <i class="ph-duotone ph-cpu ph-sm text-accent"></i>
+      </div>
+      <div class="text-lg text-ink font-semibold tabular-nums" x-text="nodes.length"></div>
+    </div>
 
-    <!-- ── Left: node table + log ──────────────────────────────────────── -->
+    <!-- Total sent -->
+    <div class="bg-surface-2 border border-surface-3 rounded px-3 py-2">
+      <div class="flex items-center justify-between">
+        <span class="text-[9px] text-ink-faint uppercase tracking-wider">Total sent</span>
+        <i class="ph-duotone ph-paper-plane-tilt ph-sm text-green-400"></i>
+      </div>
+      <div class="text-lg text-ink font-semibold tabular-nums" x-text="status.total_sent || 0"></div>
+    </div>
+
+    <!-- msg/s rate -->
+    <div class="bg-surface-2 border border-surface-3 rounded px-3 py-2">
+      <div class="flex items-center justify-between">
+        <span class="text-[9px] text-ink-faint uppercase tracking-wider">Rate (msg/s)</span>
+        <i class="ph-duotone ph-activity ph-sm text-yellow-400"></i>
+      </div>
+      <div class="text-lg text-ink font-semibold tabular-nums" x-text="rate.toFixed(2)"></div>
+    </div>
+
+    <!-- Active scenario cadence -->
+    <div class="bg-surface-2 border border-surface-3 rounded px-3 py-2">
+      <div class="flex items-center justify-between">
+        <span class="text-[9px] text-ink-faint uppercase tracking-wider">Interval</span>
+        <i class="ph-duotone ph-timer ph-sm text-accent"></i>
+      </div>
+      <div class="text-lg text-ink font-semibold tabular-nums">
+        <span x-text="activeProfile ? activeProfile.interval_s.toFixed(1) : '—'"></span><span class="text-ink-faint text-xs"> s</span>
+      </div>
+    </div>
+
+    <!-- Rogue count -->
+    <div class="bg-surface-2 border border-surface-3 rounded px-3 py-2 hidden lg:block">
+      <div class="flex items-center justify-between">
+        <span class="text-[9px] text-ink-faint uppercase tracking-wider">Rogue</span>
+        <i class="ph-duotone ph-warning ph-sm text-red-400"></i>
+      </div>
+      <div class="text-lg text-ink font-semibold tabular-nums" x-text="nodes.filter(n => n.is_rogue).length"></div>
+    </div>
+  </div>
+
+  <!-- ───────────────────────── MAIN AREA ───────────────────────────────── -->
+  <div class="flex-1 flex overflow-hidden min-h-0">
+
+    <!-- ── Left sidebar: controls ──────────────────────────────────────── -->
+    <aside class="w-60 border-r border-surface-3 bg-surface-1 flex flex-col gap-4 p-3 overflow-y-auto shrink-0">
+
+      <!-- Control -->
+      <section>
+        <p class="text-ink-faint text-[10px] uppercase tracking-wider mb-2 flex items-center gap-1.5">
+          <i class="ph-duotone ph-play-circle ph-sm"></i> Control
+        </p>
+        <div class="grid grid-cols-3 gap-1">
+          <button @click="apiPost('/api/start')" title="Start"
+            class="flex items-center justify-center py-2 rounded bg-green-700 hover:bg-green-600 text-white text-xs transition-colors">
+            <i class="ph-duotone ph-play ph-sm"></i>
+          </button>
+          <button @click="apiPost('/api/pause')" title="Pause/Resume"
+            class="flex items-center justify-center py-2 rounded bg-yellow-700 hover:bg-yellow-600 text-white text-xs transition-colors">
+            <i class="ph-duotone ph-pause ph-sm"></i>
+          </button>
+          <button @click="apiPost('/api/stop')" title="Stop"
+            class="flex items-center justify-center py-2 rounded bg-red-800 hover:bg-red-700 text-white text-xs transition-colors">
+            <i class="ph-duotone ph-stop ph-sm"></i>
+          </button>
+        </div>
+      </section>
+
+      <!-- Scenario picker -->
+      <section>
+        <p class="text-ink-faint text-[10px] uppercase tracking-wider mb-2 flex items-center gap-1.5">
+          <i class="ph-duotone ph-squares-four ph-sm"></i> Scenario
+        </p>
+        <div class="grid grid-cols-2 gap-1">
+          <template x-for="s in scenarios" :key="s.key">
+            <button
+              @click="setScenario(s.key)"
+              :class="status.scenario === s.key
+                ? 'bg-accent-dim text-white border-accent'
+                : 'bg-surface-2 text-ink-muted hover:bg-surface-3 hover:text-ink border-surface-3'"
+              class="flex items-center gap-1.5 px-2 py-2 rounded border text-[11px] text-left transition-colors">
+              <i :class="`ph-duotone ph-${s.icon} ph-sm`"></i>
+              <span x-text="s.label"></span>
+            </button>
+          </template>
+        </div>
+      </section>
+
+      <!-- Scenario profile sliders -->
+      <section x-show="activeProfile">
+        <p class="text-ink-faint text-[10px] uppercase tracking-wider mb-2 flex items-center gap-1.5">
+          <i class="ph-duotone ph-sliders-horizontal ph-sm"></i>
+          <span x-text="`${status.scenario} profile`"></span>
+        </p>
+        <div class="space-y-3">
+          <!-- interval -->
+          <div>
+            <div class="flex justify-between text-[10px] text-ink-muted mb-0.5">
+              <span>Interval</span>
+              <span class="text-ink tabular-nums">
+                <span x-text="activeProfile?.interval_s.toFixed(1)"></span>s
+              </span>
+            </div>
+            <input type="range" min="0.5" max="120" step="0.5"
+              :value="activeProfile?.interval_s"
+              @input="updateProfile(status.scenario, 'interval_s', parseFloat($event.target.value))" />
+          </div>
+          <!-- jitter -->
+          <div>
+            <div class="flex justify-between text-[10px] text-ink-muted mb-0.5">
+              <span>Jitter</span>
+              <span class="text-ink tabular-nums">
+                <span x-text="((activeProfile?.jitter_pct ?? 0) * 100).toFixed(0)"></span>%
+              </span>
+            </div>
+            <input type="range" min="0" max="1" step="0.05"
+              :value="activeProfile?.jitter_pct"
+              @input="updateProfile(status.scenario, 'jitter_pct', parseFloat($event.target.value))" />
+          </div>
+          <!-- burst size -->
+          <div>
+            <div class="flex justify-between text-[10px] text-ink-muted mb-0.5">
+              <span>Burst size</span>
+              <span class="text-ink tabular-nums" x-text="activeProfile?.burst_size"></span>
+            </div>
+            <input type="range" min="1" max="20" step="1"
+              :value="activeProfile?.burst_size"
+              @input="updateProfile(status.scenario, 'burst_size', parseInt($event.target.value))" />
+          </div>
+        </div>
+      </section>
+
+      <!-- Node count -->
+      <section>
+        <p class="text-ink-faint text-[10px] uppercase tracking-wider mb-2 flex items-center gap-1.5">
+          <i class="ph-duotone ph-stack ph-sm"></i> Node count
+        </p>
+        <div class="flex justify-between text-[10px] text-ink-muted mb-0.5">
+          <span>Boards</span>
+          <span class="text-ink tabular-nums" x-text="nodeCountSlider"></span>
+        </div>
+        <input type="range" min="1" max="30" step="1"
+          x-model="nodeCountSlider"
+          @change="setNodeCount(parseInt(nodeCountSlider))" />
+        <p x-show="status.running" class="text-[9px] text-yellow-400 mt-1">Stop first to change count</p>
+      </section>
+
+      <!-- Zone -->
+      <section>
+        <p class="text-ink-faint text-[10px] uppercase tracking-wider mb-2 flex items-center gap-1.5">
+          <i class="ph-duotone ph-map-trifold ph-sm"></i> Zone
+        </p>
+        <select x-model="selectedZone" @change="setZone(selectedZone)"
+          class="w-full bg-surface-2 border border-surface-3 text-ink text-[11px] rounded
+                 px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent cursor-pointer">
+          <option value="">— preset —</option>
+          <template x-for="z in zones" :key="z.name">
+            <option :value="z.name" x-text="`${z.name} (r=${z.radius}km)`"></option>
+          </template>
+        </select>
+        <div class="mt-2 flex items-center gap-1 text-[10px] text-ink-muted">
+          <i class="ph-duotone ph-cursor-click ph-xs text-accent"></i>
+          <span>Click the map to set a custom center</span>
+        </div>
+        <div class="mt-2">
+          <div class="flex justify-between text-[10px] text-ink-muted mb-0.5">
+            <span>Radius</span>
+            <span class="text-ink tabular-nums" x-text="radiusSlider + ' km'"></span>
+          </div>
+          <input type="range" min="0.5" max="50" step="0.5"
+            x-model="radiusSlider"
+            @change="applyRadius()" />
+        </div>
+      </section>
+
+      <section class="mt-auto pt-3 border-t border-surface-2">
+        <div class="text-[10px] text-ink-faint flex justify-between">
+          <span>API docs</span>
+          <a href="/docs" target="_blank" class="flex items-center gap-0.5 text-accent hover:text-blue-300">
+            <i class="ph-duotone ph-arrow-square-out ph-xs"></i>/docs
+          </a>
+        </div>
+      </section>
+    </aside>
+
+    <!-- ── Center: map + node table + log ──────────────────────────────── -->
     <div class="flex-1 flex flex-col overflow-hidden min-w-0">
 
-      <!-- Board / Node table -->
-      <div class="flex-1 overflow-auto">
+      <!-- Map -->
+      <div class="relative border-b border-surface-3" style="height: 45%; min-height: 260px;">
+        <div id="map"></div>
+        <!-- Overlay legend -->
+        <div class="absolute bottom-2 left-2 bg-surface-1/90 border border-surface-3 rounded px-2 py-1.5 text-[10px] text-ink-muted flex gap-3 z-[1000] pointer-events-none">
+          <span class="flex items-center gap-1"><span class="node-marker ok !w-2 !h-2"></span> ok</span>
+          <span class="flex items-center gap-1"><span class="node-marker rogue !w-2 !h-2"></span> rogue</span>
+          <span class="flex items-center gap-1"><i class="ph-duotone ph-circle-dashed text-accent"></i> zone</span>
+        </div>
+      </div>
+
+      <!-- Node table -->
+      <div class="flex-1 overflow-auto min-h-0">
         <table class="node-table w-full text-xs border-collapse">
-          <thead class="sticky top-0 bg-surface-1 text-ink-muted uppercase tracking-wider text-[10px]">
+          <thead class="sticky top-0 bg-surface-1 text-ink-muted uppercase tracking-wider text-[10px] z-10">
             <tr>
               <th class="px-3 py-2 text-left font-medium">
                 <div class="flex items-center gap-1">
-                  <i class="ph-duotone ph-cpu ph-sm"></i>
-                  Board ID
+                  <i class="ph-duotone ph-cpu ph-sm"></i> Board ID
                 </div>
               </th>
               <th class="px-3 py-2 text-left font-medium">Name</th>
-              <th class="px-3 py-2 text-left font-medium hidden lg:table-cell">MQTT Topic</th>
+              <th class="px-3 py-2 text-left font-medium hidden xl:table-cell">MQTT Topic</th>
               <th class="px-3 py-2 text-right font-medium">Lat</th>
               <th class="px-3 py-2 text-right font-medium">Lon</th>
               <th class="px-3 py-2 text-right font-medium">Alt</th>
@@ -133,44 +391,30 @@
           <tbody class="divide-y divide-surface-2">
             <template x-if="nodes.length === 0">
               <tr>
-                <td colspan="8" class="px-3 py-10 text-center text-ink-faint text-sm">
-                  Connecting…
-                </td>
+                <td colspan="8" class="px-3 py-10 text-center text-ink-faint text-sm">Connecting…</td>
               </tr>
             </template>
             <template x-for="node in nodes" :key="node.id">
-              <tr :id="'row-' + node.id.slice(1)" class="cursor-default">
-                <!-- Board ID -->
-                <td class="px-3 py-2 font-mono text-blue-400" x-text="node.id"></td>
-                <!-- Name -->
-                <td class="px-3 py-2 text-ink font-medium" x-text="node.longname"></td>
-                <!-- Topic -->
-                <td class="px-3 py-2 text-ink-faint text-[10px] hidden lg:table-cell truncate max-w-xs"
+              <tr :id="'row-' + node.id.slice(1)"
+                  :class="{ 'selected': selectedNode?.id === node.id }"
+                  @click="openNode(node)">
+                <td class="px-3 py-1.5 font-mono text-accent" x-text="node.id"></td>
+                <td class="px-3 py-1.5 text-ink font-medium" x-text="node.longname"></td>
+                <td class="px-3 py-1.5 text-ink-faint text-[10px] hidden xl:table-cell truncate max-w-xs"
                     x-text="node.topic || '—'"></td>
-                <!-- Lat -->
-                <td class="px-3 py-2 text-right tabular-nums text-ink-muted"
-                    x-text="node.lat?.toFixed(4)"></td>
-                <!-- Lon -->
-                <td class="px-3 py-2 text-right tabular-nums text-ink-muted"
-                    x-text="node.lon?.toFixed(4)"></td>
-                <!-- Alt -->
-                <td class="px-3 py-2 text-right tabular-nums text-ink-muted"
-                    x-text="node.alt"></td>
-                <!-- Sent -->
-                <td class="px-3 py-2 text-right tabular-nums font-semibold text-ink"
-                    x-text="node.sent"></td>
-                <!-- State badge -->
-                <td class="px-3 py-2 text-center">
+                <td class="px-3 py-1.5 text-right tabular-nums text-ink-muted" x-text="node.lat?.toFixed(4)"></td>
+                <td class="px-3 py-1.5 text-right tabular-nums text-ink-muted" x-text="node.lon?.toFixed(4)"></td>
+                <td class="px-3 py-1.5 text-right tabular-nums text-ink-muted" x-text="node.alt"></td>
+                <td class="px-3 py-1.5 text-right tabular-nums font-semibold text-ink" x-text="node.sent"></td>
+                <td class="px-3 py-1.5 text-center">
                   <template x-if="node.is_rogue">
                     <span class="inline-flex items-center gap-1 bg-red-900/40 text-red-400 text-[10px] px-1.5 py-0.5 rounded">
-                      <i class="ph-duotone ph-warning ph-xs"></i>
-                      rogue
+                      <i class="ph-duotone ph-warning ph-xs"></i> rogue
                     </span>
                   </template>
                   <template x-if="!node.is_rogue">
-                    <span class="inline-flex items-center gap-1 text-green-600 text-[10px]">
-                      <i class="ph-duotone ph-check-circle ph-xs"></i>
-                      ok
+                    <span class="inline-flex items-center gap-1 text-green-500 text-[10px]">
+                      <i class="ph-duotone ph-check-circle ph-xs"></i> ok
                     </span>
                   </template>
                 </td>
@@ -180,24 +424,21 @@
         </table>
       </div>
 
-      <!-- Live log ─────────────────────────────────────────────────────── -->
+      <!-- Live log -->
       <div class="border-t border-surface-3 bg-surface-1 shrink-0">
         <div class="flex items-center justify-between px-4 py-1.5 border-b border-surface-2">
           <div class="flex items-center gap-1.5 text-[10px] text-ink-muted uppercase tracking-wider">
-            <i class="ph-duotone ph-list-bullets ph-sm"></i>
-            Live log
+            <i class="ph-duotone ph-list-bullets ph-sm"></i> Live log
+            <span class="text-ink-faint" x-text="`(${log.length})`"></span>
           </div>
-          <button @click="log = []"
-            class="flex items-center gap-1 text-[10px] text-ink-faint hover:text-ink transition-colors">
-            <i class="ph-duotone ph-trash ph-xs"></i>
-            clear
+          <button @click="log = []" class="flex items-center gap-1 text-[10px] text-ink-faint hover:text-ink transition-colors">
+            <i class="ph-duotone ph-trash ph-xs"></i> clear
           </button>
         </div>
         <div id="log-feed" class="px-4 py-2 space-y-0.5">
           <template x-for="(entry, i) in log" :key="i">
             <div class="flex items-start gap-2 text-[11px] leading-relaxed">
               <span class="text-ink-faint tabular-nums shrink-0" x-text="entry.time"></span>
-              <!-- Text message -->
               <template x-if="entry.level === 'text'">
                 <span>
                   <i class="ph-duotone ph-chat-circle ph-xs text-green-500 mr-0.5"></i>
@@ -206,118 +447,125 @@
                   <span class="text-ink" x-text="entry.text"></span>
                 </span>
               </template>
-              <!-- Position message -->
               <template x-if="entry.level === 'position'">
                 <span>
-                  <i class="ph-duotone ph-map-pin ph-xs text-blue-400 mr-0.5"></i>
-                  <span class="text-blue-400 font-medium" x-text="entry.node"></span>
+                  <i class="ph-duotone ph-map-pin ph-xs text-accent mr-0.5"></i>
+                  <span class="text-accent font-medium" x-text="entry.node"></span>
                   <span class="text-ink-faint mx-1">at</span>
                   <span class="text-ink-muted" x-text="`${entry.lat}, ${entry.lon}`"></span>
                 </span>
               </template>
             </div>
           </template>
-          <div x-show="log.length === 0" class="text-ink-faint text-xs py-2">
-            Waiting for traffic…
-          </div>
+          <div x-show="log.length === 0" class="text-ink-faint text-[11px] py-2">Waiting for traffic…</div>
         </div>
       </div>
     </div>
 
-    <!-- ── Right sidebar: controls ─────────────────────────────────────── -->
-    <aside class="w-56 border-l border-surface-3 bg-surface-1 flex flex-col gap-5 p-4 overflow-y-auto shrink-0">
-
-      <!-- Transport -->
-      <section>
-        <p class="text-ink-faint text-[10px] uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
-          <i class="ph-duotone ph-play-circle ph-sm"></i>
-          Control
-        </p>
-        <div class="flex flex-col gap-2">
-          <button @click="apiPost('/api/start')"
-            class="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded
-                   bg-green-700 hover:bg-green-600 text-white text-xs font-medium transition-colors">
-            <i class="ph-duotone ph-play ph-sm"></i>
-            Start
-          </button>
-          <button @click="apiPost('/api/pause')"
-            class="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded
-                   bg-yellow-700 hover:bg-yellow-600 text-white text-xs font-medium transition-colors">
-            <i class="ph-duotone ph-pause ph-sm"></i>
-            Pause
-          </button>
-          <button @click="apiPost('/api/stop')"
-            class="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded
-                   bg-red-800 hover:bg-red-700 text-white text-xs font-medium transition-colors">
-            <i class="ph-duotone ph-stop ph-sm"></i>
-            Stop
-          </button>
-        </div>
-      </section>
-
-      <!-- Scenario -->
-      <section>
-        <p class="text-ink-faint text-[10px] uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
-          <i class="ph-duotone ph-squares-four ph-sm"></i>
-          Scenario
-        </p>
-        <div class="flex flex-col gap-1">
-          <template x-for="s in scenarios" :key="s.key">
-            <button
-              @click="setScenario(s.key)"
-              :class="status.scenario === s.key
-                ? 'bg-blue-700 text-white'
-                : 'bg-surface-2 text-ink-muted hover:bg-surface-3 hover:text-ink'"
-              class="w-full flex items-center gap-2 px-3 py-2 rounded text-xs text-left transition-colors">
-              <i :class="`ph-duotone ph-${s.icon} ph-sm`"></i>
-              <span x-text="s.label"></span>
+    <!-- ── Right: node detail drawer ───────────────────────────────────── -->
+    <aside class="w-72 border-l border-surface-3 bg-surface-1 drawer flex flex-col shrink-0"
+           :class="{ 'closed': !selectedNode }">
+      <template x-if="selectedNode">
+        <div class="flex flex-col h-full overflow-hidden">
+          <div class="flex items-center justify-between px-4 py-2.5 border-b border-surface-3">
+            <div class="flex items-center gap-2">
+              <i class="ph-duotone ph-cpu ph-md text-accent"></i>
+              <span class="text-xs font-semibold text-ink">Node detail</span>
+            </div>
+            <button @click="closeNode()" class="text-ink-faint hover:text-ink">
+              <i class="ph-duotone ph-x ph-md"></i>
             </button>
-          </template>
-        </div>
-      </section>
+          </div>
 
-      <!-- Zone -->
-      <section>
-        <p class="text-ink-faint text-[10px] uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
-          <i class="ph-duotone ph-map-trifold ph-sm"></i>
-          Zone
-        </p>
-        <select x-model="selectedZone" @change="setZone(selectedZone)"
-          class="w-full bg-surface-2 border border-surface-3 text-ink text-xs rounded
-                 px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer">
-          <option value="">Select zone…</option>
-          <template x-for="z in zones" :key="z.name">
-            <option :value="z.name" x-text="`${z.name}  (r=${z.radius}km)`"></option>
-          </template>
-        </select>
-        <p class="text-ink-faint text-[10px] mt-1">Stop traffic before changing zone.</p>
-      </section>
+          <div class="flex-1 overflow-y-auto p-4 space-y-4">
+            <!-- ID (read-only) -->
+            <div>
+              <div class="text-[10px] text-ink-faint uppercase tracking-wider mb-1">Board ID</div>
+              <div class="font-mono text-accent text-sm" x-text="selectedNode.id"></div>
+              <div class="font-mono text-ink-faint text-[10px] mt-0.5 truncate" x-text="selectedNode.topic || '—'"></div>
+            </div>
 
-      <!-- Info -->
-      <section class="mt-auto pt-3 border-t border-surface-2">
-        <div class="text-[10px] text-ink-faint space-y-1">
-          <div class="flex justify-between">
-            <span>Boards</span>
-            <span class="text-ink" x-text="nodes.length"></span>
+            <!-- Editable: longname -->
+            <div>
+              <label class="text-[10px] text-ink-faint uppercase tracking-wider">Long name</label>
+              <input type="text" maxlength="40"
+                x-model="editBuffer.longname"
+                class="w-full mt-1 bg-surface-2 border border-surface-3 text-ink text-xs rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent" />
+            </div>
+
+            <!-- Editable: shortname -->
+            <div>
+              <label class="text-[10px] text-ink-faint uppercase tracking-wider">Short name</label>
+              <input type="text" maxlength="4"
+                x-model="editBuffer.shortname"
+                class="w-full mt-1 bg-surface-2 border border-surface-3 text-ink text-xs rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-accent" />
+            </div>
+
+            <!-- Editable: lat / lon -->
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="text-[10px] text-ink-faint uppercase tracking-wider">Lat</label>
+                <input type="number" step="0.0001"
+                  x-model.number="editBuffer.lat"
+                  class="w-full mt-1 bg-surface-2 border border-surface-3 text-ink text-xs rounded px-2 py-1.5 font-mono focus:outline-none focus:ring-1 focus:ring-accent" />
+              </div>
+              <div>
+                <label class="text-[10px] text-ink-faint uppercase tracking-wider">Lon</label>
+                <input type="number" step="0.0001"
+                  x-model.number="editBuffer.lon"
+                  class="w-full mt-1 bg-surface-2 border border-surface-3 text-ink text-xs rounded px-2 py-1.5 font-mono focus:outline-none focus:ring-1 focus:ring-accent" />
+              </div>
+            </div>
+
+            <!-- Editable: alt -->
+            <div>
+              <label class="text-[10px] text-ink-faint uppercase tracking-wider">Altitude (m)</label>
+              <input type="number"
+                x-model.number="editBuffer.alt"
+                class="w-full mt-1 bg-surface-2 border border-surface-3 text-ink text-xs rounded px-2 py-1.5 font-mono focus:outline-none focus:ring-1 focus:ring-accent" />
+            </div>
+
+            <!-- Rogue toggle -->
+            <div class="flex items-center justify-between bg-surface-2 border border-surface-3 rounded px-3 py-2">
+              <div>
+                <div class="text-xs text-ink font-medium">Rogue mode</div>
+                <div class="text-[10px] text-ink-faint">Spoof source ID in payloads</div>
+              </div>
+              <button @click="editBuffer.is_rogue = !editBuffer.is_rogue"
+                :class="editBuffer.is_rogue ? 'bg-red-600' : 'bg-surface-3'"
+                class="w-9 h-5 rounded-full relative transition-colors">
+                <span class="absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all"
+                      :style="editBuffer.is_rogue ? 'left: 18px' : 'left: 2px'"></span>
+              </button>
+            </div>
+
+            <!-- Stats -->
+            <div class="bg-surface-2 border border-surface-3 rounded p-2 space-y-1 text-[10px]">
+              <div class="flex justify-between">
+                <span class="text-ink-faint">Packets sent</span>
+                <span class="text-ink tabular-nums" x-text="selectedNode.sent"></span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-ink-faint">Board connected</span>
+                <span :class="selectedNode.board_connected ? 'text-green-400' : 'text-ink-faint'"
+                      x-text="selectedNode.board_connected ? 'yes' : 'no'"></span>
+              </div>
+            </div>
           </div>
-          <div class="flex justify-between">
-            <span>Zone</span>
-            <span class="text-ink" x-text="status.zone || '—'"></span>
-          </div>
-          <div class="flex justify-between">
-            <span>Total sent</span>
-            <span class="text-ink" x-text="status.total_sent || 0"></span>
-          </div>
-          <div class="flex justify-between items-center pt-1 border-t border-surface-3">
-            <span>API docs</span>
-            <a href="/docs" target="_blank"
-              class="flex items-center gap-0.5 text-blue-400 hover:text-blue-300 transition-colors">
-              <i class="ph-duotone ph-arrow-square-out ph-xs"></i>
-              /docs
-            </a>
+
+          <!-- Footer actions -->
+          <div class="border-t border-surface-3 p-3 flex gap-2">
+            <button @click="closeNode()"
+              class="flex-1 py-2 rounded bg-surface-2 hover:bg-surface-3 text-ink-muted hover:text-ink text-xs transition-colors">
+              Cancel
+            </button>
+            <button @click="saveNode()"
+              class="flex-1 py-2 rounded bg-accent-dim hover:bg-accent text-white text-xs font-medium transition-colors flex items-center justify-center gap-1">
+              <i class="ph-duotone ph-check ph-sm"></i> Save
+            </button>
           </div>
         </div>
-      </section>
+      </template>
     </aside>
   </div>
 
@@ -325,41 +573,101 @@
   <script>
     function meshApp() {
       return {
+        // ── state ────────────────────────────────────────────────────────
         status: {
           running: false, paused: false, mqtt_connected: false,
           scenario: 'idle', zone: '', total_sent: 0, uptime: 0, node_count: 0,
+          zone_center: { lat: 45.4654, lon: 9.1859, radius_km: 5.0 },
+          scenarios: {},
         },
         nodes: [],
         log: [],
         zones: [],
         selectedZone: '',
         uptimeStr: '00:00:00',
+        rate: 0,
+        _lastSentTotal: 0,
+        _lastRateTs: 0,
+        _rateTick: null,
         _baseTs: 0,
         _serverUptime: 0,
         _uptimeTick: null,
         _ws: null,
 
-        // Phosphor icon names (duotone)
+        // map
+        _map: null,
+        _zoneCircle: null,
+        _markers: {},   // node_id → Leaflet marker
+
+        // node drawer
+        selectedNode: null,
+        editBuffer: {},
+
+        // control sliders
+        nodeCountSlider: 5,
+        radiusSlider: 5,
+        _radiusDebounce: null,
+
         scenarios: [
-          { key: 'idle',  label: 'Idle',                icon: 'radio'                },
-          { key: 'chat',  label: 'Chat',                icon: 'chat-circle'          },
-          { key: 'walk',  label: 'Walk',                icon: 'person-simple-walk'   },
-          { key: 'burst', label: 'Burst',               icon: 'lightning'            },
+          { key: 'idle',  label: 'Idle',  icon: 'radio'              },
+          { key: 'chat',  label: 'Chat',  icon: 'chat-circle'        },
+          { key: 'walk',  label: 'Walk',  icon: 'person-simple-walk' },
+          { key: 'burst', label: 'Burst', icon: 'lightning'          },
         ],
 
+        get activeProfile() {
+          return this.status.scenarios?.[this.status.scenario] || null;
+        },
+
+        // ── init ─────────────────────────────────────────────────────────
         init() {
+          this.initMap();
           this.connectWS();
           this.loadZones();
           this._startUptimeTick();
+          this._startRateTick();
         },
 
+        initMap() {
+          this._map = L.map('map', { zoomControl: true, attributionControl: true }).setView([45.4654, 9.1859], 12);
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap',
+            maxZoom: 19,
+          }).addTo(this._map);
+
+          this._zoneCircle = L.circle([45.4654, 9.1859], {
+            radius: 5000,
+            color: '#58a6ff',
+            weight: 1,
+            fillColor: '#58a6ff',
+            fillOpacity: 0.05,
+            dashArray: '4,4',
+          }).addTo(this._map);
+
+          // Click → custom zone center
+          this._map.on('click', (e) => {
+            if (this.status.running) {
+              this.toast('Stop traffic before moving the zone');
+              return;
+            }
+            if (!confirm(`Set new zone center here?\n${e.latlng.lat.toFixed(4)}, ${e.latlng.lng.toFixed(4)}`)) return;
+            this.setCustomZone(e.latlng.lat, e.latlng.lng, this.radiusSlider);
+          });
+        },
+
+        toast(msg) {
+          console.log('[toast]', msg);
+          // lightweight — could be replaced with a real UI toast later
+        },
+
+        // ── WebSocket ────────────────────────────────────────────────────
         connectWS() {
           const proto = location.protocol === 'https:' ? 'wss' : 'ws';
           this._ws = new WebSocket(`${proto}://${location.host}/ws`);
           this._ws.onmessage = (e) => {
             const msg = JSON.parse(e.data);
             if      (msg.type === 'status')         this.applyStatus(msg);
-            else if (msg.type === 'nodes_snapshot') this.nodes = msg.nodes;
+            else if (msg.type === 'nodes_snapshot') this.applyNodesSnapshot(msg.nodes);
             else if (msg.type === 'node_update')    this.applyNodeUpdate(msg);
             else if (msg.type === 'log')            this.appendLog(msg);
           };
@@ -370,18 +678,99 @@
           this.status = { ...this.status, ...s };
           this._serverUptime = s.uptime || 0;
           this._baseTs = Date.now();
+          if (s.zone_center) {
+            this.radiusSlider = s.zone_center.radius_km;
+            if (this._zoneCircle) {
+              this._zoneCircle.setLatLng([s.zone_center.lat, s.zone_center.lon]);
+              this._zoneCircle.setRadius(s.zone_center.radius_km * 1000);
+            }
+          }
+          if (s.node_count != null) this.nodeCountSlider = s.node_count;
+        },
+
+        applyNodesSnapshot(nodes) {
+          this.nodes = nodes;
+          this.redrawMarkers();
+          // if the drawer was open, refresh the buffer
+          if (this.selectedNode) {
+            const fresh = this.nodes.find(n => n.id === this.selectedNode.id);
+            if (fresh) {
+              this.selectedNode = fresh;
+            } else {
+              this.closeNode();
+            }
+          }
+          // Fit bounds once at first load
+          if (nodes.length && this._map) {
+            const center = this.status.zone_center;
+            if (center) this._map.setView([center.lat, center.lon], 12);
+          }
         },
 
         applyNodeUpdate(data) {
           const node = this.nodes.find(n => n.id === data.node_id);
-          if (node) {
-            node.sent = data.sent;
-            if (data.lat !== undefined) { node.lat = data.lat; node.lon = data.lon; }
-            const row = document.getElementById('row-' + data.node_id.slice(1));
-            if (row) {
-              row.classList.remove('row-flash');
-              void row.offsetWidth;
-              row.classList.add('row-flash');
+          if (!node) return;
+          node.sent = data.sent;
+          if (data.lat !== undefined) { node.lat = data.lat; node.lon = data.lon; }
+          if (data.total_sent != null) this.status.total_sent = data.total_sent;
+
+          // update marker
+          const m = this._markers[node.id];
+          if (m) {
+            m.setLatLng([node.lat, node.lon]);
+            const el = m.getElement();
+            if (el) {
+              const dot = el.querySelector('.node-marker');
+              if (dot) {
+                dot.classList.remove('active');
+                void dot.offsetWidth;
+                dot.classList.add('active');
+              }
+            }
+          }
+
+          // row flash
+          const row = document.getElementById('row-' + node.id.slice(1));
+          if (row) {
+            row.classList.remove('row-flash');
+            void row.offsetWidth;
+            row.classList.add('row-flash');
+          }
+        },
+
+        redrawMarkers() {
+          if (!this._map) return;
+          // remove missing
+          for (const id of Object.keys(this._markers)) {
+            if (!this.nodes.find(n => n.id === id)) {
+              this._map.removeLayer(this._markers[id]);
+              delete this._markers[id];
+            }
+          }
+          // add/update
+          for (const n of this.nodes) {
+            if (!this._markers[n.id]) {
+              const icon = L.divIcon({
+                className: '',
+                html: `<div class="node-marker ${n.is_rogue ? 'rogue' : 'ok'}"></div>`,
+                iconSize: [14, 14],
+                iconAnchor: [7, 7],
+              });
+              const marker = L.marker([n.lat, n.lon], { icon })
+                .bindTooltip(`<b>${n.longname}</b><br>${n.id}`, { className: 'node-tip', direction: 'top', offset: [0, -6] })
+                .on('click', () => this.openNode(n));
+              marker.addTo(this._map);
+              this._markers[n.id] = marker;
+            } else {
+              this._markers[n.id].setLatLng([n.lat, n.lon]);
+              const el = this._markers[n.id].getElement();
+              if (el) {
+                const dot = el.querySelector('.node-marker');
+                if (dot) {
+                  dot.classList.toggle('rogue', !!n.is_rogue);
+                  dot.classList.toggle('ok', !n.is_rogue);
+                }
+              }
             }
           }
         },
@@ -396,30 +785,120 @@
           });
         },
 
-        async apiPost(url) {
+        // ── API helpers ──────────────────────────────────────────────────
+        async apiPost(url, body) {
           try {
-            const r = await fetch(url, { method: 'POST' });
+            const opts = { method: 'POST' };
+            if (body !== undefined) {
+              opts.headers = { 'Content-Type': 'application/json' };
+              opts.body = JSON.stringify(body);
+            }
+            const r = await fetch(url, opts);
             return await r.json();
           } catch(e) { console.error('apiPost', url, e); }
         },
 
+        async apiPatch(url, body) {
+          try {
+            const r = await fetch(url, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+            });
+            return await r.json();
+          } catch(e) { console.error('apiPatch', url, e); }
+        },
+
         setScenario(name) { this.apiPost(`/api/scenario/${name}`); },
-        setZone(name)     { if (name) this.apiPost(`/api/zone/${name}`); },
+
+        setZone(name) {
+          if (!name) return;
+          this.apiPost(`/api/zone/${name}`);
+          this.selectedZone = '';
+        },
+
+        setCustomZone(lat, lon, radius_km) {
+          this.apiPost('/api/zone/custom', { name: 'Custom', lat, lon, radius_km });
+        },
 
         async loadZones() {
           try { this.zones = await fetch('/api/zones').then(r => r.json()); }
           catch(e) { console.error(e); }
         },
 
+        setNodeCount(count) {
+          if (this.status.running) return;
+          this.apiPost('/api/config/nodes', { count });
+        },
+
+        applyRadius() {
+          // Re-centre current zone at same lat/lon with new radius
+          if (this.status.running) return;
+          clearTimeout(this._radiusDebounce);
+          this._radiusDebounce = setTimeout(() => {
+            const c = this.status.zone_center;
+            if (!c) return;
+            this.setCustomZone(c.lat, c.lon, parseFloat(this.radiusSlider));
+          }, 250);
+        },
+
+        updateProfile(scenario, key, value) {
+          const body = {}; body[key] = value;
+          // optimistic local update
+          if (this.status.scenarios[scenario]) {
+            this.status.scenarios[scenario][key] = value;
+          }
+          this.apiPost(`/api/config/scenario/${scenario}`, body);
+        },
+
+        // ── node drawer ──────────────────────────────────────────────────
+        openNode(node) {
+          this.selectedNode = node;
+          this.editBuffer = {
+            longname: node.longname,
+            shortname: node.shortname,
+            lat: node.lat,
+            lon: node.lon,
+            alt: node.alt,
+            is_rogue: node.is_rogue,
+          };
+        },
+
+        closeNode() {
+          this.selectedNode = null;
+          this.editBuffer = {};
+        },
+
+        async saveNode() {
+          if (!this.selectedNode) return;
+          await this.apiPatch(`/api/nodes/${this.selectedNode.id}`, this.editBuffer);
+          this.closeNode();
+        },
+
+        // ── timers ───────────────────────────────────────────────────────
         _startUptimeTick() {
           this._uptimeTick = setInterval(() => {
-            if (!this.status.running) return;
+            if (!this.status.running) { this.uptimeStr = '00:00:00'; return; }
             const elapsed = this._serverUptime + Math.floor((Date.now() - this._baseTs) / 1000);
             const h = String(Math.floor(elapsed / 3600)).padStart(2, '0');
             const m = String(Math.floor((elapsed % 3600) / 60)).padStart(2, '0');
             const s = String(elapsed % 60).padStart(2, '0');
             this.uptimeStr = `${h}:${m}:${s}`;
           }, 1000);
+        },
+
+        _startRateTick() {
+          this._lastSentTotal = 0;
+          this._lastRateTs = Date.now();
+          this._rateTick = setInterval(() => {
+            const now = Date.now();
+            const dt = (now - this._lastRateTs) / 1000;
+            const sent = this.status.total_sent || 0;
+            const delta = sent - this._lastSentTotal;
+            this.rate = dt > 0 ? Math.max(0, delta / dt) : 0;
+            this._lastSentTotal = sent;
+            this._lastRateTs = now;
+          }, 1500);
         },
       }
     }
