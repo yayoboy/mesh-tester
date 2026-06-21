@@ -345,6 +345,27 @@
         </div>
       </section>
 
+      <!-- Connect serial device -->
+      <section>
+        <p class="text-ink-faint text-[10px] uppercase tracking-wider mb-2 flex items-center gap-1.5">
+          <i class="ph-duotone ph-usb ph-sm"></i> Serial device
+        </p>
+        <div class="flex gap-2 items-center">
+          <select x-model="serialPort" class="flex-1 bg-surface-2 border border-surface-3 text-ink text-xs rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-accent">
+            <option value="">— port —</option>
+            <template x-for="p in serialPorts" :key="p"><option :value="p" x-text="p"></option></template>
+          </select>
+          <button @click="loadSerialPorts()" title="Refresh ports"
+            class="flex items-center justify-center px-2 py-1 rounded bg-surface-2 hover:bg-surface-3 text-ink-muted hover:text-ink text-xs transition-colors">
+            <i class="ph-duotone ph-arrows-clockwise ph-xs"></i>
+          </button>
+          <button @click="connectSerial()" :disabled="!serialPort"
+            class="flex items-center justify-center px-2 py-1 rounded bg-accent-dim hover:bg-accent text-white text-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+            Connect
+          </button>
+        </div>
+      </section>
+
       <section class="mt-auto pt-3 border-t border-surface-2">
         <div class="text-[10px] text-ink-faint flex justify-between">
           <span>API docs</span>
@@ -399,7 +420,12 @@
                   :class="{ 'selected': selectedNode?.id === node.id }"
                   @click="openNode(node)">
                 <td class="px-3 py-1.5 font-mono text-accent" x-text="node.id"></td>
-                <td class="px-3 py-1.5 text-ink font-medium" x-text="node.longname"></td>
+                <td class="px-3 py-1.5 text-ink font-medium">
+                  <span x-text="node.longname"></span>
+                  <span class="text-[10px] px-1 rounded ml-1"
+                        :class="node.kind === 'serial' ? 'bg-yellow-700 text-yellow-100' : 'bg-zinc-700 text-zinc-300'"
+                        x-text="node.kind === 'serial' ? ('SERIAL · ' + (node.port || '')) : 'VIRT'"></span>
+                </td>
                 <td class="px-3 py-1.5 text-ink-faint text-[10px] hidden xl:table-cell truncate max-w-xs"
                     x-text="node.topic || '—'"></td>
                 <td class="px-3 py-1.5 text-right tabular-nums text-ink-muted" x-text="node.lat?.toFixed(4)"></td>
@@ -429,14 +455,28 @@
         <div class="flex items-center justify-between px-4 py-1.5 border-b border-surface-2">
           <div class="flex items-center gap-1.5 text-[10px] text-ink-muted uppercase tracking-wider">
             <i class="ph-duotone ph-list-bullets ph-sm"></i> Live log
-            <span class="text-ink-faint" x-text="`(${log.length})`"></span>
+            <span class="text-ink-faint" x-text="`(${filteredLog.length})`"></span>
           </div>
-          <button @click="log = []" class="flex items-center gap-1 text-[10px] text-ink-faint hover:text-ink transition-colors">
-            <i class="ph-duotone ph-trash ph-xs"></i> clear
-          </button>
+          <div class="flex items-center gap-2">
+            <!-- Direction filter -->
+            <div class="flex items-center gap-0.5 text-[10px]">
+              <button @click="feedFilters.dir = 'all'"
+                :class="feedFilters.dir === 'all' ? 'bg-surface-3 text-ink' : 'text-ink-faint hover:text-ink'"
+                class="px-1.5 py-0.5 rounded transition-colors">all</button>
+              <button @click="feedFilters.dir = 'tx'"
+                :class="feedFilters.dir === 'tx' ? 'bg-surface-3 text-green-400' : 'text-ink-faint hover:text-ink'"
+                class="px-1.5 py-0.5 rounded transition-colors">TX</button>
+              <button @click="feedFilters.dir = 'rx'"
+                :class="feedFilters.dir === 'rx' ? 'bg-surface-3 text-sky-400' : 'text-ink-faint hover:text-ink'"
+                class="px-1.5 py-0.5 rounded transition-colors">RX</button>
+            </div>
+            <button @click="log = []" class="flex items-center gap-1 text-[10px] text-ink-faint hover:text-ink transition-colors">
+              <i class="ph-duotone ph-trash ph-xs"></i> clear
+            </button>
+          </div>
         </div>
         <div id="log-feed" class="px-4 py-2 space-y-0.5">
-          <template x-for="(entry, i) in log" :key="i">
+          <template x-for="(entry, i) in filteredLog" :key="i">
             <div class="flex items-start gap-2 text-[11px] leading-relaxed">
               <span class="text-ink-faint tabular-nums shrink-0" x-text="entry.time"></span>
               <template x-if="entry.level === 'text'">
@@ -461,6 +501,23 @@
                   <span class="text-yellow-400 font-medium" x-text="entry.node"></span>
                   <span class="text-ink-faint mx-1">›</span>
                   <span class="text-ink-muted" x-text="`${entry.battery}% · ${entry.voltage}V`"></span>
+                </span>
+              </template>
+              <template x-if="entry.level === 'rx'">
+                <span>
+                  <i class="ph-duotone ph-arrow-down ph-xs text-sky-400 mr-0.5"></i>
+                  <span class="text-sky-300 font-medium" x-text="entry.from"></span>
+                  <span class="text-ink-faint mx-1" x-text="entry.ptype"></span>
+                  <span class="text-ink-muted" x-text="entry.payload ?? ''"></span>
+                  <span class="text-ink-faint ml-1" x-show="entry.snr != null" x-text="`SNR ${entry.snr} · RSSI ${entry.rssi}`"></span>
+                </span>
+              </template>
+              <template x-if="entry.level === 'tx'">
+                <span>
+                  <i class="ph-duotone ph-arrow-up ph-xs text-green-400 mr-0.5"></i>
+                  <span class="text-green-300 font-medium" x-text="entry.node"></span>
+                  <span class="text-ink-faint mx-1" x-text="entry.ptype"></span>
+                  <span class="text-ink-muted" x-text="entry.payload ?? ''"></span>
                 </span>
               </template>
             </div>
@@ -561,6 +618,22 @@
             </div>
           </div>
 
+          <!-- Manual send -->
+          <div class="px-4 pb-2">
+            <div class="text-[10px] text-ink-faint uppercase tracking-wider mb-1">Manual send</div>
+            <div class="flex gap-1.5">
+              <input type="text" placeholder="message…"
+                x-model="manualSendText"
+                @keydown.enter="sendFrom(selectedNode.id, 'text', manualSendText); manualSendText = ''"
+                class="flex-1 bg-surface-2 border border-surface-3 text-ink text-xs rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-accent" />
+              <button @click="sendFrom(selectedNode.id, 'text', manualSendText); manualSendText = ''"
+                :disabled="!manualSendText"
+                class="px-2 py-1 rounded bg-accent-dim hover:bg-accent text-white text-xs transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                <i class="ph-duotone ph-paper-plane-tilt ph-xs"></i>
+              </button>
+            </div>
+          </div>
+
           <!-- Footer actions -->
           <div class="border-t border-surface-3 p-3 flex gap-2">
             <button @click="closeNode()"
@@ -610,11 +683,19 @@
         // node drawer
         selectedNode: null,
         editBuffer: {},
+        manualSendText: '',
 
         // control sliders
         nodeCountSlider: 5,
         radiusSlider: 5,
         _radiusDebounce: null,
+
+        // serial
+        serialPort: '',
+        serialPorts: [],
+
+        // feed filters
+        feedFilters: { dir: 'all', node: 'all' },
 
         scenarios: [
           { key: 'idle',      label: 'Idle',      icon: 'radio'              },
@@ -626,6 +707,15 @@
 
         get activeProfile() {
           return this.status.scenarios?.[this.status.scenario] || null;
+        },
+
+        get filteredLog() {
+          return this.log.filter(e => {
+            const dir = e.level === 'rx' ? 'rx' : 'tx';
+            if (this.feedFilters.dir !== 'all' && this.feedFilters.dir !== dir) return false;
+            if (this.feedFilters.node !== 'all' && (e.node_id || e.node) !== this.feedFilters.node) return false;
+            return true;
+          });
         },
 
         // ── init ─────────────────────────────────────────────────────────
@@ -882,6 +972,20 @@
           if (!this.selectedNode) return;
           await this.apiPatch(`/api/nodes/${this.selectedNode.id}`, this.editBuffer);
           this.closeNode();
+        },
+
+        // ── serial ───────────────────────────────────────────────────────
+        async loadSerialPorts() {
+          try { this.serialPorts = await fetch('/api/serial/ports').then(r => r.json()); }
+          catch(e) { console.error('loadSerialPorts', e); }
+        },
+
+        async connectSerial() {
+          await this.apiPost('/api/serial/connect', { port: this.serialPort });
+        },
+
+        sendFrom(id, type, text) {
+          return this.apiPost(`/api/nodes/${id}/send`, { type, text });
         },
 
         // ── timers ───────────────────────────────────────────────────────
