@@ -13,8 +13,10 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from src.backends.base import NodeBackend, RxEvent
+from src.backends.serial import SerialBackend
 from src.backends.virtual import VirtualBackend, _telemetry_metrics  # noqa: F401 (re-export)
 from src.config import AppConfig, ZoneConfig, load_config
+from src.serial_ports import list_ports
 from src.mqtt_injector import MqttInjector
 from src.node_factory import NodeFactory
 from src.recorder import Recorder
@@ -174,6 +176,8 @@ class MeshState:
         self.total_sent: int = 0
         self._start_time: float = 0.0
         self._node_tasks: list[asyncio.Task] = []
+        self.loop = None
+        self.serial_backends: list = []
         # Optional JSONL session recorder (enabled via config.log_to_file)
         self.recorder: Optional[Recorder] = (
             Recorder(cfg.log_path) if cfg.log_to_file else None
@@ -261,6 +265,14 @@ def create_app(cfg: Optional[AppConfig] = None) -> FastAPI:
                 "board_connected": board_map[n.id].connected if n.id in board_map else False,
                 "kind": b.kind if b else "virtual",
                 "port": getattr(b, "port", None) if b else None,
+            })
+        for b in state.serial_backends:
+            out.append({
+                "id": b.id, "longname": b.longname, "shortname": b.id[-4:],
+                "lat": None, "lon": None, "alt": None,
+                "sent": state.sent_per_node.get(b.id, 0), "is_rogue": False,
+                "topic": None, "board_connected": b.connected,
+                "kind": "serial", "port": b.port,
             })
         return out
 
@@ -377,7 +389,58 @@ def create_app(cfg: Optional[AppConfig] = None) -> FastAPI:
                 pass
         state._node_tasks = []
 
+    # ── Serial RX bridge ───────────────────────────────────────────────────────
+
+    async def _broadcast_rx(ev: RxEvent) -> None:
+        pl = ev.payload if isinstance(ev.payload, (str, int, float)) else None
+        await manager.broadcast({
+            "type": "log", "level": "rx",
+            "node": ev.backend_id, "from": ev.from_id, "ptype": ev.ptype,
+            "snr": ev.snr, "rssi": ev.rssi, "hops": ev.hops,
+            "channel": ev.channel, "payload": pl, "ts": ev.ts,
+        })
+
+    def _rx_sink(ev: RxEvent) -> None:
+        loop = state.loop
+        if loop is None:
+            return
+        loop.call_soon_threadsafe(lambda: asyncio.ensure_future(_broadcast_rx(ev)))
+
     # ── routes ─────────────────────────────────────────────────────────────────
+
+    @app.get("/api/serial/ports")
+    async def serial_ports() -> list:
+        return list_ports()
+
+    @app.post("/api/serial/connect")
+    async def serial_connect(body: dict) -> dict:
+        state.loop = asyncio.get_running_loop()
+        port = body.get("port")
+        if not port:
+            return {"ok": False, "reason": "missing port"}
+        factory = getattr(app.state, "serial_interface_factory", None)
+        kwargs = {"interface_factory": factory} if factory else {}
+        backend = SerialBackend(port, sink=_rx_sink, **kwargs)
+        try:
+            backend.connect()
+        except Exception as exc:
+            return {"ok": False, "reason": f"serial connect failed: {exc}"}
+        state.serial_backends.append(backend)
+        state.backend_by_id[backend.id] = backend
+        await manager.broadcast({"type": "nodes_snapshot", "nodes": _node_list()})
+        node = next((n for n in _node_list() if n["id"] == backend.id), None)
+        return {"ok": True, "node": node}
+
+    @app.post("/api/serial/{node_id}/disconnect")
+    async def serial_disconnect(node_id: str) -> dict:
+        b = next((x for x in state.serial_backends if x.id == node_id), None)
+        if b is None:
+            return {"ok": False, "reason": "serial node not found"}
+        b.disconnect()
+        state.serial_backends.remove(b)
+        state.backend_by_id.pop(node_id, None)
+        await manager.broadcast({"type": "nodes_snapshot", "nodes": _node_list()})
+        return {"ok": True}
 
     @app.get("/", response_class=HTMLResponse)
     async def dashboard() -> HTMLResponse:
