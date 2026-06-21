@@ -29,3 +29,25 @@ def test_send_position_publishes_json():
 def test_telemetry_metrics_ranges():
     m = _telemetry_metrics()
     assert 20 <= m["battery_level"] <= 100 and 3.2 <= m["voltage"] <= 4.2
+
+
+def test_send_text_publishes_text_payload():
+    with patch("src.mqtt_injector.mqtt.Client") as cli:
+        inst = cli.return_value
+        b = VirtualBackend(_node(), AppConfig())
+        b.connect()
+        payload = b.send_text("hi")
+    assert payload["type"] == "sendtext"
+    assert payload["payload"] == "hi"
+    assert inst.publish.called
+
+
+def test_send_telemetry_publishes_metrics():
+    with patch("src.mqtt_injector.mqtt.Client") as cli:
+        inst = cli.return_value
+        b = VirtualBackend(_node(), AppConfig())
+        b.connect()
+        payload = b.send_telemetry()
+    assert payload["type"] == "telemetry"
+    assert "battery_level" in payload["payload"]
+    assert inst.publish.called

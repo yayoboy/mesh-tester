@@ -50,6 +50,19 @@ class VirtualBackend(NodeBackend):
             self._inj.disconnect()
 
     def send_text(self, text: str, to: str | None = None, channel: int = 0) -> dict:
+        """Publish a text message via MQTT.
+
+        Args:
+            text: Message content.
+            to: Optional recipient node ID.
+            channel: Accepted for NodeBackend interface parity, but ignored.
+                     For a virtual node, the channel is determined by its MQTT
+                     topic (set on the injector). Per-message channel override
+                     is out of scope (deferred).
+
+        Returns:
+            The text payload dict published.
+        """
         payload = self.node.text_payload(text, to_node_id=to)
         self._inj.publish(self.node, payload)
         return payload
