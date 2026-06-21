@@ -217,6 +217,13 @@ class NodePatchBody(BaseModel):
     is_rogue: Optional[bool] = None
 
 
+class SendBody(BaseModel):
+    type: str = Field(pattern="^(text|position|telemetry)$")
+    text: Optional[str] = Field(default=None, max_length=200)
+    to: Optional[str] = None
+    channel: int = Field(default=0, ge=0, le=7)
+
+
 # ── App factory ────────────────────────────────────────────────────────────────
 
 def create_app(cfg: Optional[AppConfig] = None) -> FastAPI:
@@ -582,6 +589,37 @@ def create_app(cfg: Optional[AppConfig] = None) -> FastAPI:
         await manager.broadcast({"type": "nodes_snapshot", "nodes": _node_list()})
         await manager.broadcast({"type": "status", **_status_dict()})
         return {"ok": True, "zone": name}
+
+    async def _after_tx(node_id: str, b: NodeBackend, payload: dict) -> None:
+        state.total_sent += 1
+        state.sent_per_node[node_id] = state.sent_per_node.get(node_id, 0) + 1
+        await manager.broadcast({
+            "type": "log", "level": "tx", "node": b.longname, "node_id": node_id,
+            "ptype": payload.get("type"), "payload": payload.get("payload"),
+            "ts": time.time(),
+        })
+
+    @app.post("/api/nodes/{node_id}/send")
+    async def manual_send(node_id: str, body: SendBody) -> dict:
+        b = state.backend_by_id.get(node_id)
+        if b is None:
+            return {"ok": False, "reason": "node not found"}
+        if not b.connected:
+            try:
+                b.connect()
+            except Exception as exc:
+                return {"ok": False, "reason": f"connect failed: {exc}"}
+        try:
+            if body.type == "text":
+                payload = b.send_text(body.text or "", to=body.to, channel=body.channel)
+            elif body.type == "position":
+                payload = b.send_position()
+            else:
+                payload = b.send_telemetry()
+        except Exception as exc:
+            return {"ok": False, "reason": f"send failed: {exc}"}
+        await _after_tx(node_id, b, payload)
+        return {"ok": True, "sent": payload}
 
     @app.patch("/api/nodes/{node_id}")
     async def patch_node(node_id: str, body: NodePatchBody) -> dict:

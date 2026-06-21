@@ -43,3 +43,34 @@ def test_serial_disconnect_removes_node():
     nid = next(n["id"] for n in client.get("/api/nodes").json() if n["kind"] == "serial")
     assert client.post(f"/api/serial/{nid}/disconnect").json()["ok"] is True
     assert all(n["kind"] != "serial" for n in client.get("/api/nodes").json())
+
+
+def test_manual_send_text_from_serial_node():
+    client = make_client()
+    client.post("/api/serial/connect", json={"port": "/dev/ttyUSB0"})
+    nid = next(n["id"] for n in client.get("/api/nodes").json() if n["kind"] == "serial")
+    resp = client.post(f"/api/nodes/{nid}/send", json={"type": "text", "text": "hi"})
+    assert resp.json()["ok"] is True
+
+
+def test_manual_send_unknown_node():
+    client = make_client()
+    resp = client.post("/api/nodes/!nope/send", json={"type": "text", "text": "x"})
+    assert resp.json()["ok"] is False
+
+
+def test_manual_send_from_virtual_node_after_start():
+    from unittest.mock import MagicMock, patch
+    with patch("src.mqtt_injector.mqtt.Client") as mock_mqtt_cls:
+        mock_client = MagicMock()
+        mock_mqtt_cls.return_value = mock_client
+        mock_client.connect.return_value = None
+        mock_client.loop_start.return_value = None
+        mock_client.publish.return_value = MagicMock(rc=0)
+        client = make_client()
+        client.post("/api/start")
+        nodes = client.get("/api/nodes").json()
+        virtual_node = next(n for n in nodes if n["kind"] == "virtual")
+        nid = virtual_node["id"]
+        resp = client.post(f"/api/nodes/{nid}/send", json={"type": "text", "text": "hi"})
+        assert resp.json()["ok"] is True
