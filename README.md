@@ -75,6 +75,72 @@ you're emulating:
 > with `count=50` uses 50 connections. This is intentional — it makes each
 > virtual node indistinguishable from a real, separately-connected device.
 
+### Serial (real) nodes
+
+Starting from the serial backend (v4), the web app supports a third kind of
+node: a **real Meshtastic device** connected over USB serial.
+
+**Backend abstraction.** All nodes implement a unified `NodeBackend` interface
+(`src/backends/base.py`):
+
+- `VirtualBackend` (`src/backends/virtual.py`) — MQTT injection, unchanged from
+  v3.  This is what the scenario scheduler drives.
+- `SerialBackend` (`src/backends/serial.py`) — wraps
+  `meshtastic.serial_interface.SerialInterface`.  Receives packets over LoRa and
+  can send text, position, or telemetry frames manually.
+
+**Connecting a real device.**
+
+1. Plug your device into a USB port.
+2. Run the web app **directly on the host** (not in Docker — see caveat below):
+
+   ```bash
+   python web_main.py
+   ```
+
+3. Open the dashboard (`http://localhost:8080`), click "Connect serial device",
+   pick the port from the dropdown (populated via `GET /api/serial/ports`), and
+   press **Connect** (`POST /api/serial/connect`).
+
+The node appears in the node list with a **SERIAL** badge (virtual nodes show
+**VIRT**). To disconnect: `POST /api/serial/{node_id}/disconnect`.
+
+**Manual send.** While scenarios auto-drive only virtual nodes in Phase 1, any
+node — virtual or serial — exposes a per-node **Send** control on the dashboard.
+API: `POST /api/nodes/{node_id}/send` with body
+`{type: "text"|"position"|"telemetry", text?, to?, channel?}`.
+
+**TX/RX feed.** Every outbound packet (TX, `level:"tx"`) and every packet
+received over LoRa by a serial node (RX, `level:"rx"`) appears in the
+dashboard log.  The feed is filterable by direction (TX / RX / both) and by
+node.  RX events carry `from`, `snr`, `rssi`, `hops`, and a decoded `payload`
+field.
+
+**Phase-1 limitation.** The scenario scheduler (`idle`, `chat`, `walk`,
+`burst`, `telemetry`) drives **virtual nodes only**.  Serial nodes transmit via
+manual send.  Device admin (owner/channel config), traceroute, and serial
+scenario auto-traffic are deferred to Phase 2.
+
+**Docker / USB caveat.** The default container has no access to host USB ports
+(`/dev/ttyUSB*` or `/dev/ttyACM*`).  Options:
+
+- **Host run (simplest):** `python web_main.py` outside Docker — full USB access,
+  no extra config.
+- **Docker with device passthrough:** add a `devices` mapping and the `dialout`
+  group in `compose.yaml`:
+
+  ```yaml
+  services:
+    app:
+      devices:
+        - "/dev/ttyUSB0:/dev/ttyUSB0"   # adjust port as needed
+      group_add:
+        - dialout
+  ```
+
+The bundled virtual/MQTT mode is **unaffected** — `docker compose up` continues
+to work exactly as before when no serial device is needed.
+
 ### MQTT topic & payload
 
 Topics follow Meshtastic's JSON convention:
@@ -154,7 +220,7 @@ Save the current resolved config to JSON: `python main.py --zone Roma --count 8 
 
 ```bash
 pip install -e ".[dev]"
-python -m pytest -q          # 106 tests
+python -m pytest -q          # 126 tests
 ```
 
 Tests mock the MQTT client, so no broker is required.

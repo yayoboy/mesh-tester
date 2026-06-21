@@ -1,6 +1,6 @@
 # Mesh Tester - Task List
 
-> **Last updated:** 2026-06-21 (v3 web app + integrations)
+> **Last updated:** 2026-06-21 (v4 serial backend Phase 1)
 > **Plan:** `docs/superpowers/plans/2026-04-10-mesh-tester.md`
 > **Linear project:** [Mesh Tester](https://linear.app/yayoboy/project/mesh-tester-add1c613c89b)
 
@@ -49,6 +49,22 @@ via subagent-driven development.
 | R | README | Root `README.md` documenting architecture, two injection models, scenarios, recording | done |
 
 **Tests passing (v3):** 106 / 106
+
+## Progress summary — v4 — serial backend (Phase 1)
+
+| # | Task | Description | Status |
+|---|------|-------------|--------|
+| 1 | `NodeBackend` abstraction | `src/backends/base.py` — abstract base with `send_text / send_position / send_telemetry / disconnect / is_connected` | done |
+| 2 | `VirtualBackend` | `src/backends/virtual.py` — wraps existing `NodeInjector`; drops MQTT-coupled logic from `web/app.py` | done |
+| 3 | Serial port discovery | `src/serial_ports.py` `list_ports()` — wraps `serial.tools.list_ports`; returns `[{port, description}]` | done |
+| 4 | `SerialBackend` | `src/backends/serial.py` — wraps `meshtastic.serial_interface.SerialInterface`; RX callback pushes `RxEvent` to asyncio queue | done |
+| 5 | App state refactor | `web/app.py` `state.backend_by_id: dict[str, NodeBackend]`; startup wires virtual nodes to `VirtualBackend` | done |
+| 6 | Serial connect/disconnect API | `GET /api/serial/ports`, `POST /api/serial/connect {port}`, `POST /api/serial/{node_id}/disconnect`; RX bridge task pushes `level:"rx"` WebSocket events | done |
+| 7 | Manual send API | `POST /api/nodes/{node_id}/send {type, text?, to?, channel?}` — works for both virtual and serial nodes | done |
+| 8 | Dashboard UI | VIRT/SERIAL node badge; "Connect serial device" control (port dropdown + Connect); per-node Send panel; filterable TX/RX feed (direction + node filters) | done |
+| 9 | Docs | `README.md` serial section + Docker/USB caveat; `TASKS.md` v4 section | done |
+
+**Tests passing (v4):** 126 / 126
 
 ---
 
