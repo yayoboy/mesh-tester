@@ -22,3 +22,6 @@ logs/
 
 # Config overrides (keep example, ignore personal)
 config/*.json
+.superpowers/
+.playwright-mcp/
+mesh-dashboard.png
