@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from typing import Callable, Optional
+from typing import Callable
 
 from src.backends.base import NodeBackend, RxEvent, RxSink
 
@@ -41,6 +41,7 @@ class SerialBackend(NodeBackend):
         self.longname = user.get("longName") or self.id
         try:
             from pubsub import pub
+            # pypubsub holds listeners weakly; MeshState keeps this backend referenced so the callback survives.
             pub.subscribe(self._on_receive, "meshtastic.receive")
         except Exception:
             pass
