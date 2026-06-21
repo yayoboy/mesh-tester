@@ -14,6 +14,7 @@ import sys
 from src.config import AppConfig, ConfigError, ZoneConfig, save_config, load_config
 from src.mqtt_injector import MqttInjector
 from src.node_factory import NodeFactory
+from src.recorder import Recorder
 from src.tui.app import MeshTesterApp
 from src.virtual_node import VirtualNode
 from src.zone import ITALY_PRESETS
@@ -148,11 +149,13 @@ def main(argv=None) -> None:
         gateway_ids=cfg.mqtt.gateway_ids,
     )
     initial_scenario = args.scenario or cfg.zone.name
+    recorder = Recorder(cfg.log_path) if cfg.log_to_file else None
 
     app = MeshTesterApp(
         injector=injector,
         nodes=nodes,
         initial_scenario=initial_scenario,
+        recorder=recorder,
     )
     try:
         app.run()

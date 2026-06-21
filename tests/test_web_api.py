@@ -1,4 +1,6 @@
 """Web API tests — FastAPI TestClient (no real MQTT broker needed)."""
+import json
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -175,6 +177,55 @@ def test_connection_manager_disconnect_idempotent():
     mgr = ConnectionManager()
     fake_ws = MagicMock()
     mgr.disconnect(fake_ws)  # should not raise even if not in list
+
+
+# ── Telemetry scenario ─────────────────────────────────────────────────────────
+
+def test_telemetry_scenario_available():
+    client = make_client()
+    scenarios = client.get("/api/status").json()["scenarios"]
+    assert "telemetry" in scenarios
+    resp = client.post("/api/scenario/telemetry")
+    assert resp.json() == {"ok": True, "scenario": "telemetry"}
+
+
+def test_telemetry_metrics_within_plausible_range():
+    from src.web.app import _telemetry_metrics
+    for _ in range(20):
+        m = _telemetry_metrics()
+        assert 20 <= m["battery_level"] <= 100
+        assert 3.2 <= m["voltage"] <= 4.2
+        assert {"battery_level", "voltage", "snr", "rssi"} <= set(m)
+
+
+# ── Recorder wiring ────────────────────────────────────────────────────────────
+
+@patch("src.mqtt_injector.mqtt.Client")
+def test_recorder_writes_session_when_enabled(mock_client_cls, tmp_path):
+    """With log_to_file=True, the initial position announce is recorded to JSONL."""
+    mock_client_cls.return_value = MagicMock()
+    cfg = AppConfig()
+    cfg.nodes.count = 3
+    cfg.log_to_file = True
+    cfg.log_path = str(tmp_path / "logs" / "session.jsonl")
+
+    client = TestClient(create_app(cfg))
+    client.post("/api/start")
+    client.post("/api/stop")
+
+    log_file = Path(cfg.log_path)
+    assert log_file.exists()
+    lines = log_file.read_text().splitlines()
+    assert len(lines) >= 3  # >= one position announce per node
+    entry = json.loads(lines[0])
+    assert entry["type"] == "sendposition"
+    assert "payload" in entry and "node_id" in entry
+
+
+def test_recorder_disabled_by_default():
+    """No recorder is created unless log_to_file is set."""
+    state = MeshState(AppConfig())
+    assert state.recorder is None
 
 
 # ── _ProxyInjector unit ────────────────────────────────────────────────────────

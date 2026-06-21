@@ -74,6 +74,15 @@ def test_replay_calls_publish_in_order():
         os.unlink(path)
 
 
+def test_recorder_creates_missing_parent_dir(tmp_path):
+    """A relative/nested log path works without manual mkdir."""
+    path = tmp_path / "logs" / "nested" / "session.jsonl"
+    rec = Recorder(str(path))
+    rec.record(make_node(), make_node().position_payload())
+    assert path.exists()
+    assert len(path.read_text().splitlines()) == 1
+
+
 def test_replay_preserves_node_id():
     with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as f:
         path = f.name

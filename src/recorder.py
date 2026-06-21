@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from src.virtual_node import VirtualNode
@@ -15,6 +16,11 @@ class Recorder:
 
     def __init__(self, path: str) -> None:
         self._path = path
+        # Ensure the parent directory exists so a relative path like
+        # "logs/session.jsonl" works without manual setup.
+        parent = Path(path).parent
+        if parent and not parent.exists():
+            parent.mkdir(parents=True, exist_ok=True)
 
     def record(self, node: VirtualNode, payload: dict) -> None:
         """Append one event line to the JSONL file."""

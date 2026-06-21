@@ -9,6 +9,7 @@ from textual.timer import Timer
 from textual.widgets import Footer, Header, Label, Static
 
 from src.mqtt_injector import MqttInjector
+from src.recorder import Recorder
 from src.traffic_generator import TrafficGenerator
 from src.tui.widgets.message_log import MessageLog
 from src.tui.widgets.node_table import NodeTable
@@ -68,10 +69,12 @@ class MeshTesterApp(App[None]):
         nodes: Optional[list[VirtualNode]] = None,
         scenarios: Optional[dict] = None,
         initial_scenario: Optional[str] = None,
+        recorder: Optional[Recorder] = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
         self._injector = injector
+        self._recorder = recorder
         self._virtual_nodes: list[VirtualNode] = list(nodes or [])
         self._scenarios: dict = scenarios or {}
         self._initial_scenario = (
@@ -129,6 +132,8 @@ class MeshTesterApp(App[None]):
 
     def _on_send(self, node: VirtualNode, payload: dict, topic: str) -> None:
         """Called by TrafficGenerator for every published message."""
+        if self._recorder is not None:
+            self._recorder.record(node, payload)
         self._sent_per_node[node.id] = self._sent_per_node.get(node.id, 0) + 1
         self.query_one(NodeTable).update_sent(node.id, self._sent_per_node[node.id])
         log = self.query_one(MessageLog)

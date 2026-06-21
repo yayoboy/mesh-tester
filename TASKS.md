@@ -1,6 +1,6 @@
 # Mesh Tester - Task List
 
-> **Last updated:** 2026-04-10 (Redesign v2 in progress)
+> **Last updated:** 2026-06-21 (v3 web app + integrations)
 > **Plan:** `docs/superpowers/plans/2026-04-10-mesh-tester.md`
 > **Linear project:** [Mesh Tester](https://linear.app/yayoboy/project/mesh-tester-add1c613c89b)
 
@@ -37,6 +37,18 @@ via subagent-driven development.
 
 **Tests passing (v1):** 35 / 35
 **Tests passing (v2):** 84 / 84 (Tasks A–G complete)
+
+## Progress summary — v3 (web + integrations)
+
+| # | Task | Description | Status |
+|---|------|-------------|--------|
+| W | Web app | FastAPI + WebSocket dashboard, per-node scheduler, multi-board mode | done |
+| X | Docker | Multi-stage image + compose w/ Mosquitto | done |
+| Y | Recorder wiring | `Recorder` cabled into web `_emit` and TUI `_on_send` (gated by `log_to_file`); auto-creates parent dir | done |
+| Z | Telemetry scenario | `telemetry` scenario emits `telemetry_payload` (battery/voltage/SNR/RSSI) + frontend log row | done |
+| R | README | Root `README.md` documenting architecture, two injection models, scenarios, recording | done |
+
+**Tests passing (v3):** 106 / 106
 
 ---
 

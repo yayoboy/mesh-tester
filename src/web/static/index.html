@@ -455,6 +455,14 @@
                   <span class="text-ink-muted" x-text="`${entry.lat}, ${entry.lon}`"></span>
                 </span>
               </template>
+              <template x-if="entry.level === 'telemetry'">
+                <span>
+                  <i class="ph-duotone ph-battery-high ph-xs text-yellow-500 mr-0.5"></i>
+                  <span class="text-yellow-400 font-medium" x-text="entry.node"></span>
+                  <span class="text-ink-faint mx-1">›</span>
+                  <span class="text-ink-muted" x-text="`${entry.battery}% · ${entry.voltage}V`"></span>
+                </span>
+              </template>
             </div>
           </template>
           <div x-show="log.length === 0" class="text-ink-faint text-[11px] py-2">Waiting for traffic…</div>
@@ -609,10 +617,11 @@
         _radiusDebounce: null,
 
         scenarios: [
-          { key: 'idle',  label: 'Idle',  icon: 'radio'              },
-          { key: 'chat',  label: 'Chat',  icon: 'chat-circle'        },
-          { key: 'walk',  label: 'Walk',  icon: 'person-simple-walk' },
-          { key: 'burst', label: 'Burst', icon: 'lightning'          },
+          { key: 'idle',      label: 'Idle',      icon: 'radio'              },
+          { key: 'chat',      label: 'Chat',      icon: 'chat-circle'        },
+          { key: 'walk',      label: 'Walk',      icon: 'person-simple-walk' },
+          { key: 'burst',     label: 'Burst',     icon: 'lightning'          },
+          { key: 'telemetry', label: 'Telemetry', icon: 'battery-high'       },
         ],
 
         get activeProfile() {

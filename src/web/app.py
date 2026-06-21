@@ -15,11 +15,23 @@ from pydantic import BaseModel, Field
 from src.config import AppConfig, ZoneConfig, load_config
 from src.mqtt_injector import MqttInjector
 from src.node_factory import NodeFactory
+from src.recorder import Recorder
 from src.virtual_node import VirtualNode
 from src.zone import ITALY_PRESETS
 
 _STATIC = Path(__file__).parent / "static"
 _CHAT_VOCAB = ["ciao", "hello", "ack", "ok", "test", "ping", "here", "on air"]
+
+
+def _telemetry_metrics() -> dict:
+    """Plausible device metrics for a telemetry payload (voltage tracks battery)."""
+    battery = random.randint(20, 100)
+    return {
+        "battery_level": battery,
+        "voltage": round(3.2 + battery / 100 * 1.0, 2),  # ~3.2–4.2 V
+        "snr": round(random.uniform(-5.0, 12.0), 1),
+        "rssi": random.randint(-120, -40),
+    }
 
 
 # ── Scenario profiles ──────────────────────────────────────────────────────────
@@ -38,14 +50,15 @@ class ScenarioProfile:
     interval_s: float
     jitter_pct: float
     burst_size: int
-    kind: str  # "position" | "chat" | "walk" | "burst_chat"
+    kind: str  # "position" | "chat" | "walk" | "burst_chat" | "telemetry"
 
 
 DEFAULT_SCENARIOS: dict[str, ScenarioProfile] = {
-    "idle":  ScenarioProfile(interval_s=60.0, jitter_pct=0.50, burst_size=1, kind="position"),
-    "chat":  ScenarioProfile(interval_s=15.0, jitter_pct=0.70, burst_size=1, kind="chat"),
-    "walk":  ScenarioProfile(interval_s=8.0,  jitter_pct=0.20, burst_size=1, kind="walk"),
-    "burst": ScenarioProfile(interval_s=6.0,  jitter_pct=0.10, burst_size=5, kind="burst_chat"),
+    "idle":      ScenarioProfile(interval_s=60.0, jitter_pct=0.50, burst_size=1, kind="position"),
+    "chat":      ScenarioProfile(interval_s=15.0, jitter_pct=0.70, burst_size=1, kind="chat"),
+    "walk":      ScenarioProfile(interval_s=8.0,  jitter_pct=0.20, burst_size=1, kind="walk"),
+    "burst":     ScenarioProfile(interval_s=6.0,  jitter_pct=0.10, burst_size=5, kind="burst_chat"),
+    "telemetry": ScenarioProfile(interval_s=30.0, jitter_pct=0.40, burst_size=1, kind="telemetry"),
 }
 
 
@@ -168,6 +181,10 @@ class MeshState:
         self.total_sent: int = 0
         self._start_time: float = 0.0
         self._node_tasks: list[asyncio.Task] = []
+        # Optional JSONL session recorder (enabled via config.log_to_file)
+        self.recorder: Optional[Recorder] = (
+            Recorder(cfg.log_path) if cfg.log_to_file else None
+        )
 
     def rebuild_nodes(self) -> None:
         self.nodes = NodeFactory(self.cfg.zone, self.cfg.nodes, seed=42).generate()
@@ -261,6 +278,8 @@ def create_app(cfg: Optional[AppConfig] = None) -> FastAPI:
         if state.proxy_injector is None:
             return
         state.proxy_injector.publish(node, payload)
+        if state.recorder is not None:
+            state.recorder.record(node, payload)
         state.sent_per_node[node.id] = state.sent_per_node.get(node.id, 0) + 1
         state.total_sent += 1
         ts = time.time()
@@ -286,6 +305,15 @@ def create_app(cfg: Optional[AppConfig] = None) -> FastAPI:
                 "type": "log", "level": "position",
                 "node": node.longname, "node_id": node.id,
                 "lat": round(node.lat, 6), "lon": round(node.lon, 6),
+                "ts": ts,
+            })
+        elif ptype == "telemetry":
+            metrics = payload.get("payload", {})
+            await manager.broadcast({
+                "type": "log", "level": "telemetry",
+                "node": node.longname, "node_id": node.id,
+                "battery": metrics.get("battery_level"),
+                "voltage": metrics.get("voltage"),
                 "ts": ts,
             })
 
@@ -339,6 +367,8 @@ def create_app(cfg: Optional[AppConfig] = None) -> FastAPI:
                         text = f"burst#{state.total_sent + 1}"
                         await _emit(node, node.text_payload(text))
                         await asyncio.sleep(0.05)
+                elif profile.kind == "telemetry":
+                    await _emit(node, node.telemetry_payload(**_telemetry_metrics()))
             except Exception as exc:  # pragma: no cover
                 print(f"[_node_loop] {node.id} error: {exc}")
 
