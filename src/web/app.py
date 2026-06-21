@@ -420,8 +420,6 @@ def create_app(cfg: Optional[AppConfig] = None) -> FastAPI:
         state.sent_per_node = {n.id: 0 for n in state.nodes}
         state.total_sent = 0
         state.backends = [VirtualBackend(n, state.cfg) for n in state.nodes]
-        for b in state.backends:
-            b.connect()
         state.backend_by_id = {b.id: b for b in state.backends}
 
         try:
