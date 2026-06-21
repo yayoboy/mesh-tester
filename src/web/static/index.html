@@ -470,6 +470,14 @@
                 :class="feedFilters.dir === 'rx' ? 'bg-surface-3 text-sky-400' : 'text-ink-faint hover:text-ink'"
                 class="px-1.5 py-0.5 rounded transition-colors">RX</button>
             </div>
+            <!-- Node filter -->
+            <select x-model="feedFilters.node"
+              class="text-[10px] bg-surface-2 text-ink-muted border border-surface-3 rounded px-1.5 py-0.5 focus:outline-none focus:border-accent transition-colors">
+              <option value="all">All nodes</option>
+              <template x-for="n in nodes" :key="n.id">
+                <option :value="n.id" x-text="n.longname || n.id"></option>
+              </template>
+            </select>
             <button @click="log = []" class="flex items-center gap-1 text-[10px] text-ink-faint hover:text-ink transition-colors">
               <i class="ph-duotone ph-trash ph-xs"></i> clear
             </button>
@@ -522,7 +530,7 @@
               </template>
             </div>
           </template>
-          <div x-show="log.length === 0" class="text-ink-faint text-[11px] py-2">Waiting for traffic…</div>
+          <div x-show="filteredLog.length === 0" class="text-ink-faint text-[11px] py-2">Waiting for traffic…</div>
         </div>
       </div>
     </div>
