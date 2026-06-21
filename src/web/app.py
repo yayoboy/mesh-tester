@@ -12,6 +12,8 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from src.backends.base import NodeBackend, RxEvent
+from src.backends.virtual import VirtualBackend, _telemetry_metrics  # noqa: F401 (re-export)
 from src.config import AppConfig, ZoneConfig, load_config
 from src.mqtt_injector import MqttInjector
 from src.node_factory import NodeFactory
@@ -21,17 +23,6 @@ from src.zone import ITALY_PRESETS
 
 _STATIC = Path(__file__).parent / "static"
 _CHAT_VOCAB = ["ciao", "hello", "ack", "ok", "test", "ping", "here", "on air"]
-
-
-def _telemetry_metrics() -> dict:
-    """Plausible device metrics for a telemetry payload (voltage tracks battery)."""
-    battery = random.randint(20, 100)
-    return {
-        "battery_level": battery,
-        "voltage": round(3.2 + battery / 100 * 1.0, 2),  # ~3.2–4.2 V
-        "snr": round(random.uniform(-5.0, 12.0), 1),
-        "rssi": random.randint(-120, -40),
-    }
 
 
 # ── Scenario profiles ──────────────────────────────────────────────────────────
@@ -170,6 +161,8 @@ class MeshState:
         ).generate()
         self.node_injectors: list[NodeInjector] = []
         self.proxy_injector: Optional[_ProxyInjector] = None
+        self.backends: list[NodeBackend] = []
+        self.backend_by_id: dict[str, NodeBackend] = {}
         self.running: bool = False
         self.paused: bool = False
         self.mqtt_connected: bool = False
@@ -256,21 +249,20 @@ def create_app(cfg: Optional[AppConfig] = None) -> FastAPI:
 
     def _node_list() -> list[dict]:
         board_map = {ni.node.id: ni for ni in state.node_injectors}
-        return [
-            {
-                "id": n.id,
-                "longname": n.longname,
-                "shortname": n.shortname,
-                "lat": round(n.lat, 6),
-                "lon": round(n.lon, 6),
-                "alt": n.alt,
-                "sent": state.sent_per_node.get(n.id, 0),
-                "is_rogue": n.is_rogue,
+        bmap = state.backend_by_id
+        out = []
+        for n in state.nodes:
+            b = bmap.get(n.id)
+            out.append({
+                "id": n.id, "longname": n.longname, "shortname": n.shortname,
+                "lat": round(n.lat, 6), "lon": round(n.lon, 6), "alt": n.alt,
+                "sent": state.sent_per_node.get(n.id, 0), "is_rogue": n.is_rogue,
                 "topic": board_map[n.id].topic if n.id in board_map else None,
                 "board_connected": board_map[n.id].connected if n.id in board_map else False,
-            }
-            for n in state.nodes
-        ]
+                "kind": b.kind if b else "virtual",
+                "port": getattr(b, "port", None) if b else None,
+            })
+        return out
 
     # ── Emit a single payload (publish + counters + ws broadcast) ─────────────
 
@@ -427,6 +419,10 @@ def create_app(cfg: Optional[AppConfig] = None) -> FastAPI:
         state.proxy_injector = _ProxyInjector(state.node_injectors)
         state.sent_per_node = {n.id: 0 for n in state.nodes}
         state.total_sent = 0
+        state.backends = [VirtualBackend(n, state.cfg) for n in state.nodes]
+        for b in state.backends:
+            b.connect()
+        state.backend_by_id = {b.id: b for b in state.backends}
 
         try:
             state.proxy_injector.connect()

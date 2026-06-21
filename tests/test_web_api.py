@@ -241,3 +241,10 @@ def test_proxy_injector_topic_from_first_node():
         ni = NodeInjector(node, cfg)
         proxy = _ProxyInjector([ni])
     assert "!aabbccdd" in proxy.topic
+
+
+def test_nodes_report_kind_virtual():
+    client = make_client()
+    nodes = client.get("/api/nodes").json()
+    assert all(n["kind"] == "virtual" for n in nodes)
+    assert all("port" in n for n in nodes)
